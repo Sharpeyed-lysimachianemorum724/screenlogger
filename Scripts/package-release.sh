@@ -92,6 +92,16 @@ for command_name in codesign ditto find hdiutil lipo otool plutil shasum stat xc
   fi
 done
 
+SOURCE_EPOCH="${SOURCE_DATE_EPOCH:-}"
+if [[ -z "$SOURCE_EPOCH" ]] && command -v git >/dev/null 2>&1; then
+  SOURCE_EPOCH="$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || true)"
+fi
+if [[ ! "$SOURCE_EPOCH" =~ ^[0-9]+$ ]]; then
+  echo "error: SOURCE_DATE_EPOCH must be an integer (or package from a Git checkout)" >&2
+  exit 1
+fi
+export SOURCE_DATE_EPOCH="$SOURCE_EPOCH"
+
 WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/screenlogger-package.XXXXXX")"
 DMG_VERIFY_MOUNT=""
 cleanup_package_work() {
@@ -150,14 +160,6 @@ done
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PLIST")"
 BUILD_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PLIST")"
 MINIMUM_MACOS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP_PLIST")"
-SOURCE_EPOCH="${SOURCE_DATE_EPOCH:-}"
-if [[ -z "$SOURCE_EPOCH" ]] && command -v git >/dev/null 2>&1; then
-  SOURCE_EPOCH="$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || true)"
-fi
-if [[ ! "$SOURCE_EPOCH" =~ ^[0-9]+$ ]]; then
-  echo "error: SOURCE_DATE_EPOCH must be an integer (or package from a Git checkout)" >&2
-  exit 1
-fi
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
   echo "error: app marketing version is not release-safe: $VERSION" >&2
   exit 1

@@ -68,7 +68,7 @@ jobs:
 
       - name: Build and verify ad-hoc signed universal assets
         run: |
-          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$RELEASE_TAG")"
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "${RELEASE_TAG}^{commit}")"
           Scripts/package-release.sh \
             --expected-tag "$RELEASE_TAG" \
             --output build/releases
