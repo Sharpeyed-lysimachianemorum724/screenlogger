@@ -558,6 +558,19 @@ if (( FAILURES > 0 )); then
   exit 1
 fi
 
+AUTOMATION_ENTITLEMENT="$(
+  /usr/libexec/PlistBuddy \
+    -c 'Print :com.apple.security.automation.apple-events' \
+    "$ROOT/Config/Screenlog.entitlements" \
+    2>/dev/null \
+    || true
+)"
+if [[ "$AUTOMATION_ENTITLEMENT" == "true" ]]; then
+  pass "configured release entitlements allow the Terminal handoff"
+else
+  fail "configured release entitlements do not allow the Terminal handoff"
+fi
+
 APP_SIGNATURE_DETAILS="$(codesign -dvvv "$APP_PATH" 2>&1 || true)"
 EXPECTED_TEAM_ID="$({
   grep '^TeamIdentifier=' <<<"$APP_SIGNATURE_DETAILS" || true
