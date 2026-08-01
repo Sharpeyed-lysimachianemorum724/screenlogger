@@ -66,6 +66,13 @@ jobs:
             ONLY_ACTIVE_ARCH=YES \
             test
 
+      - name: Build and verify ad-hoc signed universal assets
+        run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$RELEASE_TAG")"
+          Scripts/package-release.sh \
+            --expected-tag "$RELEASE_TAG" \
+            --output build/releases
+
       - name: Compile routed UI contracts
         run: |
           xcodebuild \
@@ -79,13 +86,6 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             ONLY_ACTIVE_ARCH=YES \
             build-for-testing
-
-      - name: Build and verify ad-hoc signed universal assets
-        run: |
-          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$RELEASE_TAG")"
-          Scripts/package-release.sh \
-            --expected-tag "$RELEASE_TAG" \
-            --output build/releases
 
       - name: Upload verified release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
