@@ -1,0 +1,134 @@
+import XCTest
+
+final class ExclusionPolicyPresentationTests: XCTestCase {
+    func testExplicitApplicationProducesNeverCaptureWithExactProvenance() {
+        let presentation = ExclusionPolicyPresentation.application(
+            displayName: "Notes",
+            bundleID: "com.apple.Notes",
+            explicitlyExcluded: true
+        )
+
+        XCTAssertEqual(presentation.outcome, .neverCapture)
+        XCTAssertEqual(presentation.provenance, [.explicitApplication])
+        XCTAssertEqual(presentation.provenanceSummary, "Explicit application")
+        XCTAssertTrue(presentation.detail.contains("explicitly excluded under Applications"))
+    }
+
+    func testExplicitBrowserExplainsThatEveryWindowIsCovered() {
+        let presentation = ExclusionPolicyPresentation.application(
+            displayName: "Safari",
+            bundleID: "com.apple.Safari",
+            explicitlyExcluded: true
+        )
+
+        XCTAssertEqual(presentation.outcome, .neverCapture)
+        XCTAssertEqual(
+            presentation.provenance,
+            [.explicitApplication, .entireBrowser]
+        )
+        XCTAssertEqual(
+            presentation.provenanceSummary,
+            "Explicit application  |  Entire browser"
+        )
+        XCTAssertTrue(presentation.detail.contains("every one of its windows is skipped"))
+    }
+
+    func testBroaderApplicationCategoryOwnsEffectiveOutcome() {
+        let presentation = ExclusionPolicyPresentation.application(
+            displayName: "1Password",
+            bundleID: "com.1password.1password",
+            explicitlyExcluded: false,
+            categoryNames: ["Password Managers"]
+        )
+
+        XCTAssertEqual(presentation.outcome, .neverCapture)
+        XCTAssertEqual(presentation.provenance, [.broaderCategory("Password Managers")])
+        XCTAssertTrue(presentation.detail.contains("covered by the enabled Password Managers category"))
+    }
+
+    func testWebsiteRetainsExplicitAndCategoryProvenanceTogether() {
+        let presentation = ExclusionPolicyPresentation.website(
+            domain: "secure.example",
+            explicitlyExcluded: true,
+            categoryNames: ["Banks"]
+        )
+
+        XCTAssertEqual(presentation.outcome, .neverCapture)
+        XCTAssertEqual(
+            presentation.provenance,
+            [.explicitDomain, .broaderCategory("Banks")]
+        )
+        XCTAssertTrue(presentation.detail.contains("when its browser address is available"))
+    }
+
+    func testWebsiteWithoutMatchingPolicyCanCaptureWhenAddressIsAvailable() {
+        let presentation = ExclusionPolicyPresentation.website(
+            domain: "example.com",
+            explicitlyExcluded: false
+        )
+
+        XCTAssertEqual(presentation.outcome, .canCapture)
+        XCTAssertTrue(presentation.provenance.isEmpty)
+        XCTAssertEqual(presentation.provenanceSummary, "No matching exclusion")
+        XCTAssertTrue(presentation.detail.contains("when its browser address is available"))
+    }
+
+    func testCategoryAndUnknownAddressOutcomesDescribeTheirOwningPolicy() {
+        let enabledCategory = ExclusionPolicyPresentation.broaderCategory(
+            name: "Banks",
+            isEnabled: true,
+            matchingContent: "banking websites"
+        )
+        let disabledCategory = ExclusionPolicyPresentation.broaderCategory(
+            name: "Banks",
+            isEnabled: false,
+            matchingContent: "banking websites"
+        )
+        let strict = ExclusionPolicyPresentation.unknownBrowserAddress(
+            strictProtectionEnabled: true
+        )
+        let permissive = ExclusionPolicyPresentation.unknownBrowserAddress(
+            strictProtectionEnabled: false
+        )
+
+        XCTAssertEqual(enabledCategory.outcome, .neverCapture)
+        XCTAssertEqual(enabledCategory.provenance, [.broaderCategory("Banks")])
+        XCTAssertEqual(disabledCategory.outcome, .canCapture)
+        XCTAssertEqual(strict.outcome, .neverCapture)
+        XCTAssertEqual(strict.provenance, [.unknownAddressStrictProtection])
+        XCTAssertEqual(permissive.outcome, .canCapture)
+        XCTAssertTrue(permissive.detail.contains("Exclude the entire browser"))
+    }
+
+    func testEveryAccessibilityHintExplainsFutureOnlyNonDeletionBehavior() {
+        let presentations = [
+            ExclusionPolicyPresentation.application(
+                displayName: "Notes",
+                bundleID: "com.apple.Notes",
+                explicitlyExcluded: false
+            ),
+            ExclusionPolicyPresentation.website(
+                domain: "example.com",
+                explicitlyExcluded: true
+            ),
+            ExclusionPolicyPresentation.broaderCategory(
+                name: "Banks",
+                isEnabled: true,
+                matchingContent: "banking websites"
+            ),
+            ExclusionPolicyPresentation.unknownBrowserAddress(
+                strictProtectionEnabled: true
+            ),
+        ]
+
+        for presentation in presentations {
+            XCTAssertTrue(presentation.accessibilityHint.hasPrefix(presentation.outcome.title))
+            XCTAssertTrue(
+                presentation.accessibilityHint.hasSuffix(
+                    ExclusionPolicyPresentation.futureMomentsNotice
+                )
+            )
+            XCTAssertTrue(presentation.accessibilityHint.contains("not deleted"))
+        }
+    }
+}

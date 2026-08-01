@@ -1,0 +1,780 @@
+import AppKit
+import SwiftUI
+
+// MARK: - Settings shell
+
+/// Root for both the SwiftUI `Settings` scene and the app-owned settings window.
+/// A real split view keeps selection, keyboard navigation, resizing, and
+/// accessibility behavior consistent with other macOS settings windows.
+struct SettingsView: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var searchQuery = ""
+    @State private var highlightedAnchor: SettingsAnchor?
+    @State private var highlightedRequestID: UUID?
+    @State private var destinationFocusRequest: SettingsDestinationFocusRequest?
+    @State private var selectedSearchResultID: String?
+    @State private var activatedSearchRequest: SettingsNavigationRequest?
+
+    var body: some View {
+        NavigationSplitView {
+            VStack(spacing: 0) {
+                SettingsSearchField(
+                    text: $searchQuery,
+                    onSubmit: activateSelectedOrFirstSearchResult,
+                    onMoveSelection: moveSearchSelection,
+                    onEscape: clearSearch
+                )
+                .frame(height: 28)
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+                .padding(.bottom, 7)
+
+                List(selection: sidebarSelection) {
+                    if normalizedSearchQuery.isEmpty {
+                        ForEach(SettingsSidebarSection.all) { section in
+                            Section(section.title) {
+                                ForEach(section.items) { item in
+                                    Label(item.title, systemImage: item.systemImage)
+                                        .tag(SettingsSidebarSelection.section(item))
+                                        .accessibilityHint(item.accessibilityHint)
+                                        .accessibilityIdentifier("settings.sidebar.\(item.rawValue)")
+                                }
+                            }
+                        }
+                    } else if searchResults.isEmpty {
+                        Text("No settings found")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("No settings found for \(searchQuery)")
+                    } else {
+                        Text(
+                            "\(searchResults.count) matching \(searchResults.count == 1 ? "result" : "results")"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings.search.summary")
+
+                        Section("Search Results") {
+                            ForEach(searchResults) { result in
+                                Label {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(result.title)
+                                        Text(result.subtitle)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                } icon: {
+                                    Image(systemName: result.systemImage)
+                                }
+                                .tag(SettingsSidebarSelection.searchResult(result.id))
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(result.title)
+                                .accessibilityValue(result.subtitle)
+                                .accessibilityHint("Show this result in Settings")
+                                .accessibilityIdentifier(result.accessibilityIdentifier)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
+            }
+            .navigationSplitViewColumnWidth(min: 176, ideal: 190, max: 224)
+            .accessibilityLabel("Settings sections and search results")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Divider()
+                SettingsSidebarCaptureState(
+                    presentation: model.captureStatusPresentation()
+                ) { destination in
+                    switch destination {
+                    case .setup:
+                        model.showPermissions(origin: .settings)
+                    case .storage:
+                        navigate(to: .storageManagement)
+                    case .exclusions:
+                        navigate(to: .exclusionsWebsites)
+                    case .capture:
+                        navigate(to: .captureStatus)
+                    }
+                }
+            }
+        } detail: {
+            settingsDetail
+                .environment(\.settingsHighlightedAnchor, highlightedAnchor)
+                .environment(\.settingsDestinationFocusRequest, destinationFocusRequest)
+        }
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 760, idealWidth: 860, minHeight: 500, idealHeight: 600)
+        .tint(model.accentSwiftUIColor)
+        .preferredColorScheme(model.appearancePreference == .light ? .light : model.appearancePreference == .dark ? .dark : nil)
+        .transaction { transaction in
+            if reduceMotion { transaction.animation = nil }
+        }
+        .onExitCommand {
+            _ = clearSearch()
+        }
+        .onChange(of: model.settingsSelection) { _, selection in
+            if destinationFocusRequest?.anchor.section != selection {
+                destinationFocusRequest = nil
+            }
+        }
+        .onChange(of: searchQuery) { _, _ in
+            selectedSearchResultID = nil
+            // A contextual route clears the search as it arrives. Keep that
+            // route's highlight and focus request alive until it is consumed.
+            if model.settingsNavigationRequest == nil {
+                highlightedAnchor = nil
+                highlightedRequestID = nil
+                destinationFocusRequest = nil
+            }
+        }
+    }
+
+    // MARK: Detail
+
+    @ViewBuilder
+    private var settingsDetail: some View {
+        if !normalizedSearchQuery.isEmpty, searchResults.isEmpty {
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Label("Settings Search", systemImage: "magnifyingglass")
+                        .font(.title3.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                    SLPrimaryNavigation(current: .settings)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                Divider()
+
+                ContentUnavailableView {
+                    Label("No Settings Found", systemImage: "magnifyingglass")
+                } description: {
+                    Text("Try a different word or clear the Settings search.")
+                } actions: {
+                    Button("Clear Search") {
+                        searchQuery = ""
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("settings.search.clear")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("No settings found for \(normalizedSearchQuery)")
+                .accessibilityIdentifier("settings.search.empty")
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor))
+        } else {
+            VStack(spacing: 0) {
+                SettingsPaneHeader(item: model.settingsSelection) {
+                    SLPrimaryNavigation(current: .settings)
+                }
+                Divider()
+                detailScroll
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+    }
+
+    @ViewBuilder
+    private var detailScroll: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    switch model.settingsSelection {
+                    case .general: GeneralSettingsPane()
+                    case .appearance: AppearanceSettingsPane()
+                    case .shortcuts: KeyboardShortcutsSettingsPane()
+                    case .capture: CaptureSettingsPane()
+                    case .privacy:
+                        PrivacySettingsPane(
+                            openCapture: { navigate(to: .captureTiming) },
+                            openExclusions: { navigate(to: .exclusionsApplications) },
+                            openStorage: { navigate(to: .storageManagement) }
+                        )
+                    case .storage: StorageSettingsPane()
+                    case .exclusions: ExclusionsSettingsPane()
+                    case .integrations: IntegrationsSettingsPane()
+                    case .support:
+                        SupportSettingsPane(
+                            openPrivacy: { navigate(to: .privacyPermissions) }
+                        )
+                    }
+                }
+                .padding(24)
+                .frame(maxWidth: 700, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .id(SettingsScrollTarget.top(model.settingsSelection))
+            }
+            .onReceive(model.$settingsNavigationRequest.compactMap { $0 }) { request in
+                reveal(request, origin: .navigationRequest, with: proxy)
+            }
+            .onChange(of: activatedSearchRequest) { _, request in
+                guard let request else { return }
+                reveal(request, origin: .settingsSearch, with: proxy)
+            }
+            .onChange(of: model.settingsSelection) { _, selection in
+                guard model.settingsNavigationRequest?.destination.section != selection,
+                    activatedSearchRequest?.destination.section != selection
+                else {
+                    return
+                }
+                DispatchQueue.main.async {
+                    proxy.scrollTo(SettingsScrollTarget.top(selection), anchor: .top)
+                }
+            }
+        }
+    }
+
+    private var searchResults: [SettingsSearchResult] {
+        SettingsSearchResult.matching(normalizedSearchQuery)
+    }
+
+    private var normalizedSearchQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var sidebarSelection: Binding<SettingsSidebarSelection?> {
+        Binding(
+            get: {
+                if normalizedSearchQuery.isEmpty {
+                    return .section(model.settingsSelection)
+                }
+                return selectedSearchResultID.map(SettingsSidebarSelection.searchResult)
+            },
+            set: { selection in
+                guard let selection else { return }
+                switch selection {
+                case .section(let section):
+                    model.settingsSelection = section
+                case .searchResult(let id):
+                    guard let result = searchResults.first(where: { $0.id == id }) else {
+                        return
+                    }
+                    activate(result)
+                }
+            }
+        )
+    }
+
+    private func activateSelectedOrFirstSearchResult() {
+        let result =
+            selectedSearchResultID.flatMap { selectedID in
+                searchResults.first(where: { $0.id == selectedID })
+            }
+            ?? searchResults.first
+        guard let result else { return }
+        activate(result)
+    }
+
+    private func moveSearchSelection(_ direction: Int) {
+        guard !searchResults.isEmpty else { return }
+        let currentIndex = selectedSearchResultID.flatMap { selectedID in
+            searchResults.firstIndex(where: { $0.id == selectedID })
+        }
+        let nextIndex: Int
+        if let currentIndex {
+            nextIndex = min(max(currentIndex + direction, 0), searchResults.count - 1)
+        } else {
+            nextIndex = direction < 0 ? searchResults.count - 1 : 0
+        }
+        selectedSearchResultID = searchResults[nextIndex].id
+    }
+
+    private func activate(_ result: SettingsSearchResult) {
+        selectedSearchResultID = result.id
+        activatedSearchRequest = SettingsNavigationRequest(
+            destination: result.destination
+        )
+    }
+
+    @discardableResult
+    private func clearSearch() -> Bool {
+        guard !normalizedSearchQuery.isEmpty else { return false }
+        searchQuery = ""
+        return true
+    }
+
+    private func navigate(to destination: SettingsDestination) {
+        searchQuery = ""
+        model.requestSettingsNavigation(to: destination)
+    }
+
+    private func reveal(
+        _ request: SettingsNavigationRequest,
+        origin: SettingsRevealOrigin,
+        with proxy: ScrollViewProxy
+    ) {
+        if origin == .navigationRequest {
+            searchQuery = ""
+        }
+        model.settingsSelection = request.destination.section
+        let anchor = request.destination.anchor
+        let target =
+            anchor.map(SettingsScrollTarget.anchor)
+            ?? SettingsScrollTarget.top(request.destination.section)
+        highlightedAnchor = request.focusedElementIdentifier == nil ? anchor : nil
+        highlightedRequestID = request.id
+        destinationFocusRequest = anchor.map {
+            SettingsDestinationFocusRequest(
+                id: request.id,
+                anchor: $0,
+                focusedElementIdentifier: request.focusedElementIdentifier
+            )
+        }
+        DispatchQueue.main.async {
+            if reduceMotion {
+                proxy.scrollTo(target, anchor: scrollAlignment(for: anchor))
+            } else {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    proxy.scrollTo(target, anchor: scrollAlignment(for: anchor))
+                }
+            }
+            // Keep the request alive for one additional run-loop turn so a
+            // newly selected pane can consume presentation details first.
+            if origin == .navigationRequest {
+                DispatchQueue.main.async {
+                    model.completeSettingsNavigation(request.id)
+                }
+            }
+        }
+
+        guard anchor != nil else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            guard highlightedRequestID == request.id else { return }
+            if reduceMotion {
+                highlightedAnchor = nil
+            } else {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    highlightedAnchor = nil
+                }
+            }
+        }
+    }
+
+    private func scrollAlignment(for anchor: SettingsAnchor?) -> UnitPoint {
+        switch anchor {
+        case .exclusionsApplications, .exclusionsWebsites:
+            // These destinations begin with an input. Aligning a tall task to
+            // its center can place that input above the visible scroll area.
+            return .top
+        case .some:
+            return .center
+        case nil:
+            return .top
+        }
+    }
+}
+
+private enum SettingsRevealOrigin {
+    case navigationRequest
+    case settingsSearch
+}
+
+private enum SettingsSidebarSelection: Hashable {
+    case section(SettingsSidebarItem)
+    case searchResult(String)
+}
+
+private enum SettingsSidebarCaptureDestination {
+    case setup
+    case storage
+    case exclusions
+    case capture
+}
+
+private struct SettingsSidebarCaptureState: View {
+    let presentation: CaptureStatusPresentation
+    let action: (SettingsSidebarCaptureDestination) -> Void
+
+    var body: some View {
+        Button {
+            action(destination)
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: presentation.symbolName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(presentation.tone.swiftUIColor)
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(presentation.compactLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(presentation.compactDetail ?? presentation.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .accessibilityLabel(presentation.compactLabel)
+        .accessibilityValue(presentation.compactDetail ?? presentation.detail)
+        .accessibilityHint(destinationHint)
+        .accessibilityIdentifier("settings.sidebar.capture-state")
+    }
+
+    private var destination: SettingsSidebarCaptureDestination {
+        switch presentation.inspectionDestination {
+        case .setup: return .setup
+        case .storage, .libraryRecovery: return .storage
+        case .websiteExclusions: return .exclusions
+        case .capture: return .capture
+        }
+    }
+
+    private var destinationHint: String {
+        switch destination {
+        case .setup: return "Open setup for the required macOS permission"
+        case .storage: return "Open Storage settings for Library and disk-space options"
+        case .exclusions: return "Open Exclusions settings to review website protection"
+        case .capture: return "Open Capture settings"
+        }
+    }
+}
+
+private struct SettingsPaneHeader<Trailing: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let item: SettingsSidebarItem
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                stackedContent
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    horizontalContent
+                    stackedContent
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("settings.pane.\(item.rawValue)")
+    }
+
+    private var horizontalContent: some View {
+        HStack(alignment: .center, spacing: 10) {
+            identity
+            Spacer(minLength: 8)
+            trailing()
+        }
+    }
+
+    private var stackedContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            identity
+            trailing()
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    private var identity: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: item.systemImage)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.title3.weight(.semibold))
+                Text(item.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .layoutPriority(1)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(item.title)
+            .accessibilityValue(item.subtitle)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("settings.pane.\(item.rawValue).heading")
+        }
+    }
+}
+
+// MARK: - Chrome tokens
+
+enum SettingsChrome {
+    static let cardRadius: CGFloat = 9
+    static let iconSize: CGFloat = 24
+    static let cardSpacing: CGFloat = 12
+    static let sectionSpacing: CGFloat = 20
+
+    static func cardFill(_ scheme: ColorScheme) -> Color {
+        Color(nsColor: .controlBackgroundColor)
+    }
+
+    static func iconFill(_ scheme: ColorScheme) -> Color {
+        Color(nsColor: .quaternaryLabelColor).opacity(0.12)
+    }
+}
+
+private struct SettingsHighlightedAnchorKey: EnvironmentKey {
+    static let defaultValue: SettingsAnchor? = nil
+}
+
+private struct SettingsDestinationFocusRequestKey: EnvironmentKey {
+    static let defaultValue: SettingsDestinationFocusRequest? = nil
+}
+
+private enum SettingsScrollTarget: Hashable {
+    case top(SettingsSidebarItem)
+    case anchor(SettingsAnchor)
+}
+
+extension EnvironmentValues {
+    fileprivate var settingsHighlightedAnchor: SettingsAnchor? {
+        get { self[SettingsHighlightedAnchorKey.self] }
+        set { self[SettingsHighlightedAnchorKey.self] = newValue }
+    }
+
+    var settingsDestinationFocusRequest: SettingsDestinationFocusRequest? {
+        get { self[SettingsDestinationFocusRequestKey.self] }
+        set { self[SettingsDestinationFocusRequestKey.self] = newValue }
+    }
+}
+
+private struct SettingsDestinationAnchorModifier: ViewModifier {
+    @Environment(\.settingsHighlightedAnchor) private var highlightedAnchor
+    @Environment(\.settingsDestinationFocusRequest) private var focusRequest
+    @EnvironmentObject private var model: AppModel
+    @FocusState private var keyboardFocused: Bool
+    @AccessibilityFocusState private var accessibilityFocused: Bool
+
+    let anchor: SettingsAnchor
+    let focusesGroup: Bool
+
+    func body(content: Content) -> some View {
+        // An anchor represents one vertical Settings section. Giving it an
+        // explicit layout contract prevents a ViewBuilder with several root
+        // children from inheriting overlay semantics and collapsing those
+        // children on top of one another.
+        VStack(alignment: .leading, spacing: SettingsChrome.cardSpacing) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay {
+            if highlightedAnchor == anchor {
+                RoundedRectangle(cornerRadius: SettingsChrome.cardRadius + 2, style: .continuous)
+                    .stroke(model.accentSwiftUIColor.opacity(0.9), lineWidth: 2)
+                    .padding(-4)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .id(SettingsScrollTarget.anchor(anchor))
+        // A programmatic deep-link needs a real focus destination, not only a
+        // scroll position. Ordinary Settings browsing does not gain another
+        // keyboard stop because only the requested group becomes focusable.
+        .focusable(
+            focusesGroup && focusRequest?.anchor == anchor
+                && focusRequest?.focusedElementIdentifier == nil
+        )
+        .focused($keyboardFocused)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(anchor.accessibilityLabel)
+        .accessibilityFocused($accessibilityFocused)
+        .accessibilityIdentifier(anchor.accessibilityIdentifier)
+        .onAppear {
+            focusIfRequested(focusRequest)
+        }
+        .onChange(of: focusRequest) { _, request in
+            focusIfRequested(request)
+        }
+    }
+
+    private func focusIfRequested(_ request: SettingsDestinationFocusRequest?) {
+        guard request?.anchor == anchor,
+            request?.focusedElementIdentifier == nil
+        else { return }
+        // Scrolling and pane replacement settle on the next run-loop turn.
+        // Move both keyboard and assistive-technology focus afterwards so the
+        // destination is immediately understandable without hunting for it.
+        DispatchQueue.main.async {
+            if focusesGroup {
+                keyboardFocused = true
+            }
+            accessibilityFocused = true
+        }
+    }
+}
+
+extension View {
+    func settingsDestinationAnchor(
+        _ anchor: SettingsAnchor,
+        focusesGroup: Bool = true
+    ) -> some View {
+        modifier(
+            SettingsDestinationAnchorModifier(
+                anchor: anchor,
+                focusesGroup: focusesGroup
+            )
+        )
+    }
+}
+
+// MARK: - Card helpers
+
+/// The shared vertical rhythm for a Settings destination made from several
+/// titled groups. Use this instead of repeating pane-local `VStack` geometry.
+struct SettingsSectionStack<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SettingsChrome.sectionSpacing) {
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Native grouped container for a related set of preferences.
+struct SettingsCard<Content: View>: View {
+    var padding: CGFloat = 14
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        GroupBox {
+            content()
+                .padding(padding == 0 ? 0 : 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .groupBoxStyle(.automatic)
+    }
+}
+
+/// Icon-in-soft-square + title/subtitle + trailing control row.
+struct SettingsCardRow<Trailing: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let icon: String
+    var iconColor: Color = .secondary
+    let title: String
+    var subtitle: String? = nil
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                stackedContent
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    horizontalContent
+                    stackedContent
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var horizontalContent: some View {
+        HStack(alignment: .center, spacing: 12) {
+            identity
+            trailingControl
+        }
+    }
+
+    private var stackedContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            identity
+            trailingControl
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    private var identity: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(iconColor)
+                .frame(width: SettingsChrome.iconSize, height: SettingsChrome.iconSize)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+        }
+    }
+
+    private var trailingControl: some View {
+        trailing()
+            .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+/// A compact standalone preference row. Bordered groups are reserved for
+/// settings that are meaningfully related rather than decorating every row.
+struct SettingsRow<Trailing: View>: View {
+    let icon: String
+    var iconColor: Color = .secondary
+    let title: String
+    var subtitle: String? = nil
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        SettingsCardRow(icon: icon, iconColor: iconColor, title: title, subtitle: subtitle) {
+            trailing()
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+    }
+}
+
+/// Compact key or unassigned-shortcut badge.
+struct SettingsShortcutBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+            .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        text
+            .replacingOccurrences(of: "Command-", with: "Command ")
+            .replacingOccurrences(of: "Option-", with: "Option ")
+            .replacingOccurrences(of: "Control-", with: "Control ")
+            .replacingOccurrences(of: "Shift-", with: "Shift ")
+    }
+}

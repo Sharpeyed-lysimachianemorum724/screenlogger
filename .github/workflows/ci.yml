@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Build and test
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      # Pin the same major toolchain used to author the project and
+      # .swift-format. The macos-15 image's Xcode.app alias still points at
+      # Xcode 16.4, even though Xcode 26.3 is installed alongside it.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Report toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun swift-format --version
+          Scripts/xcodegen.sh --version
+
+      - name: Check repository hygiene, source safety, and shell syntax
+        run: |
+          Scripts/check-repository.sh
+          Scripts/check-source-safety.sh
+          Scripts/verify-version.sh
+          bash -n Scripts/*.sh
+
+      - name: Check Swift formatting
+        run: xcrun swift-format lint --strict --configuration .swift-format --recursive Sources Tests UITests
+
+      - name: Run package tests
+        run: swift test
+
+      - name: Verify generated Xcode project
+        run: |
+          Scripts/xcodegen.sh generate
+          git diff --exit-code -- Screenlog.xcodeproj/project.pbxproj
+
+      - name: Run app presentation tests
+        run: |
+          xcodebuild \
+            -project Screenlog.xcodeproj \
+            -scheme ScreenlogAppTests \
+            -configuration Debug \
+            -destination "platform=macOS,arch=$(uname -m)" \
+            -derivedDataPath build/CIAppTestDerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            test
+
+      - name: Build and verify app package
+        env:
+          SKIP_TESTS: "1"
+        run: |
+          Scripts/build.sh
+          Scripts/verify-version.sh \
+            --products build/DerivedData/Build/Products/Debug
+
+      - name: Compile routed UI contracts
+        run: |
+          xcodebuild \
+            -project Screenlog.xcodeproj \
+            -scheme ScreenlogUI \
+            -configuration Debug \
+            -destination "platform=macOS,arch=$(uname -m)" \
+            -derivedDataPath build/CIUITestDerivedData \
+            -only-testing:ScreenlogAppUITests \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            build-for-testing

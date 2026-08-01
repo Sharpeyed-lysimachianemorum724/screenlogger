@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Screenlogger</string>
+	<key>CFBundleDisplayName</key>
+	<string>Screenlogger</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Screenlogger saves periodic screenshots on this Mac so you can search and revisit what you saw.</string>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>Screenlogger identifies the active app, website, and interface context so search and privacy exclusions work accurately.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Screenlogger asks macOS to open and control Terminal only when you choose to launch an assistant with a search request.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (c) 2026 Screenlogger contributors. MIT License.</string>
+</dict>
+</plist>

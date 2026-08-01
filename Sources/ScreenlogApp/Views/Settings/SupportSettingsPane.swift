@@ -1,0 +1,250 @@
+import Foundation
+import ScreenlogCore
+import SwiftUI
+
+/// Support information lives in one predictable place instead of being mixed
+/// into startup and privacy preferences.
+struct SupportSettingsPane: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var showingDiagnosticsContents = false
+    @State private var showingUserGuide = false
+    @State private var showingVersionDetails = false
+
+    let openPrivacy: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SettingsChrome.cardSpacing) {
+            SettingsCard(padding: 0) {
+                SettingsCardRow(
+                    icon: "book",
+                    title: "Screenlogger Guide",
+                    subtitle: "Practical setup, privacy, and recovery help-built in and available offline."
+                ) {
+                    Button {
+                        showingUserGuide = true
+                    } label: {
+                        Label("Open Guide", systemImage: "arrow.right")
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityHint("Open the offline Screenlogger user guide")
+                    .accessibilityIdentifier("settings.support.user-guide")
+                }
+                .padding(14)
+                .accessibilityIdentifier("settings.support.guide-summary")
+            }
+            .settingsDestinationAnchor(.supportGuide)
+
+            SettingsCard(padding: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsCardRow(
+                        icon: "stethoscope",
+                        title: diagnosticsTitle,
+                        subtitle: diagnosticsSubtitle
+                    ) {
+                        Button {
+                            model.chooseDiagnosticsExportDestination()
+                        } label: {
+                            Label("Export Diagnostics...", systemImage: "square.and.arrow.up")
+                        }
+                        .controlSize(.small)
+                        .disabled(model.diagnosticsExportState.isExporting)
+                        .accessibilityHint("Choose where to save a privacy-safe support bundle")
+                        .accessibilityIdentifier("settings.diagnostics.export")
+                    }
+                    .padding(14)
+                    .accessibilityIdentifier("settings.diagnostics.summary")
+
+                    Divider().padding(.leading, 58)
+
+                    DisclosureGroup(isExpanded: $showingDiagnosticsContents) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Included", systemImage: "checkmark.circle")
+                                .font(.caption.weight(.semibold))
+                            Text("App and macOS versions, Library health, permission and capture states, and recent app status events.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Label("Never included", systemImage: "hand.raised")
+                                .font(.caption.weight(.semibold))
+                            Text("Screenshots, recognized text, searches, websites, window titles, usernames, secrets, and Library paths.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, 8)
+                    } label: {
+                        Label("Review bundle contents", systemImage: "doc.text.magnifyingglass")
+                            .font(.callout.weight(.medium))
+                    }
+                    .padding(14)
+                    .accessibilityHint("Show what diagnostics include and what Screenlogger always leaves out")
+                    .accessibilityIdentifier("settings.diagnostics.contents")
+
+                    diagnosticsExportStatus
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, diagnosticsStatusIsVisible ? 14 : 0)
+                }
+            }
+            .settingsDestinationAnchor(.supportDiagnostics)
+
+            SettingsCard(padding: 0) {
+                VStack(spacing: 0) {
+                    SettingsCardRow(
+                        icon: "hand.raised",
+                        title: "Permissions & Privacy",
+                        subtitle: "Review access, data choices, and recent capture health."
+                    ) {
+                        Button("Review...", action: openPrivacy)
+                            .controlSize(.small)
+                            .accessibilityLabel("Review Permissions & Privacy")
+                            .accessibilityHint("Open Privacy settings")
+                            .accessibilityIdentifier("settings.support.review-privacy")
+                    }
+                    .padding(14)
+                }
+            }
+
+            SettingsCard(padding: 0) {
+                DisclosureGroup(isExpanded: $showingVersionDetails) {
+                    VStack(spacing: 0) {
+                        Divider().padding(.leading, 44)
+                        versionRow(
+                            title: "App version and build",
+                            value: appVersionString,
+                            identifier: "settings.support.app-version"
+                        )
+                        Divider().padding(.leading, 44)
+                        versionRow(
+                            title: "Capture and search engine",
+                            value: ScreenlogCore.version,
+                            identifier: "settings.support.engine-version"
+                        )
+                    }
+                    .padding(.top, 8)
+                } label: {
+                    HStack(spacing: 10) {
+                        Label("About Screenlogger", systemImage: "info.circle")
+                            .font(.callout.weight(.medium))
+                        Spacer(minLength: 8)
+                        Text(appVersionString)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(14)
+                .accessibilityHint("Show detailed app and engine versions")
+                .accessibilityIdentifier("settings.support.versions")
+            }
+        }
+        .sheet(isPresented: $showingUserGuide) {
+            SupportUserGuideSheet()
+                .environmentObject(model)
+        }
+        .onReceive(model.$userGuidePresentationRequest.compactMap { $0 }) { requestID in
+            showingUserGuide = true
+            model.completeUserGuidePresentation(requestID)
+        }
+    }
+
+    private var diagnosticsTitle: String {
+        switch model.diagnosticsExportState {
+        case .idle: return "Privacy-Safe Diagnostics"
+        case .exporting: return "Creating Diagnostics..."
+        case .completed: return "Diagnostics Ready"
+        case .failed: return "Diagnostics Need Attention"
+        }
+    }
+
+    private var diagnosticsSubtitle: String {
+        switch model.diagnosticsExportState {
+        case .idle:
+            return "Save app and system health to a location you choose. Screenlogger does not send the bundle."
+        case .exporting:
+            return "Creating the bundle. Screenshots and recognized text stay out."
+        case .completed:
+            return "The bundle was saved and is ready to share if you choose."
+        case .failed:
+            return "Nothing was sent. Choose another location and try again."
+        }
+    }
+
+    private func versionRow(
+        title: String,
+        value: String,
+        identifier: String
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .accessibilityIdentifier(identifier)
+        }
+        .padding(.vertical, 7)
+    }
+
+    private var appVersionString: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        if let short, let build {
+            return "\(short) (\(build))"
+        }
+        return short ?? ScreenlogCore.version
+    }
+
+    private var diagnosticsStatusIsVisible: Bool {
+        model.diagnosticsExportState != .idle
+    }
+
+    @ViewBuilder
+    private var diagnosticsExportStatus: some View {
+        switch model.diagnosticsExportState {
+        case .idle:
+            EmptyView()
+        case .exporting:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Creating your privacy-safe diagnostics bundle...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("settings.diagnostics.progress")
+        case .completed(let destination):
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Diagnostics exported.", systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(SLDesign.success)
+                HStack(spacing: 10) {
+                    Button("Show in Finder") { model.revealDiagnosticsExport(destination) }
+                        .buttonStyle(.link)
+                    Button("Done") { model.dismissDiagnosticsExportStatus() }
+                        .buttonStyle(.link)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("settings.diagnostics.completed")
+        case .failed(let error):
+            VStack(alignment: .leading, spacing: 6) {
+                Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(SLDesign.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button("Try Again") { model.chooseDiagnosticsExportDestination() }
+                        .buttonStyle(.link)
+                    Button("Dismiss") { model.dismissDiagnosticsExportStatus() }
+                        .buttonStyle(.link)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("settings.diagnostics.failed")
+        }
+    }
+}
