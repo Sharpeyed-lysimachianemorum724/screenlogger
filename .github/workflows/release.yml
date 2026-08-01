@@ -184,6 +184,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: write
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
@@ -215,3 +216,6 @@ jobs:
             --latest \
             --title "Screenlogger $RELEASE_TAG" \
             --notes "Developer ID signed and notarized universal macOS release. Open the DMG and drag Screenlogger to Applications. In-app updates are additionally protected by Screenlogger's Ed25519 update signature."
+
+      - name: Publish the signed update feed
+        run: gh workflow run update-feed.yml --ref main -f tag="$RELEASE_TAG"
