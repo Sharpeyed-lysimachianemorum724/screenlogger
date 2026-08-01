@@ -16,6 +16,84 @@ final class CLICommandAvailabilityTests: XCTestCase {
         XCTAssertFalse(availability.isChecking)
     }
 
+    func testFreshCommandAutomaticallyStartsCommandAvailabilityCheck() {
+        let setup = CLICommandAvailabilityService.pathSetup(forShellPath: "/bin/zsh")
+
+        XCTAssertEqual(
+            CLICommandAvailability.notChecked(
+                expectedPath: "/Users/test/.local/bin/screenlog",
+                setup: setup
+            ).automaticAssistantAccessVerificationAction,
+            .checkCommandAvailability
+        )
+        XCTAssertEqual(
+            CLICommandAvailability.unknown.automaticAssistantAccessVerificationAction,
+            .checkCommandAvailability
+        )
+    }
+
+    func testAvailableCommandAutomaticallyContinuesToLiveVerification() {
+        XCTAssertEqual(
+            CLICommandAvailability.available(
+                path: "/Users/test/.local/bin/screenlog"
+            ).automaticAssistantAccessVerificationAction,
+            .verifyLiveAccess
+        )
+    }
+
+    func testAutomaticVerificationDoesNotRetryPendingOrFailedChecks() {
+        let expectedPath = "/Users/test/.local/bin/screenlog"
+        let setup = CLICommandAvailabilityService.pathSetup(forShellPath: "/bin/zsh")
+        let states: [CLICommandAvailability] = [
+            .checking,
+            .unavailable(expectedPath: expectedPath, setup: setup),
+            .shadowed(
+                expectedPath: expectedPath,
+                resolvedPath: "/opt/homebrew/bin/screenlog",
+                setup: setup
+            ),
+            .checkFailed(expectedPath: expectedPath, setup: setup),
+        ]
+
+        for state in states {
+            XCTAssertEqual(
+                state.automaticAssistantAccessVerificationAction,
+                .noAction,
+                "Unexpected automatic retry for \(state)"
+            )
+        }
+    }
+
+    func testAutomaticPreparationPreservesPendingAndCompletedChecks() {
+        let expectedPath = "/Users/test/.local/bin/screenlog"
+        let setup = CLICommandAvailabilityService.pathSetup(forShellPath: "/bin/zsh")
+
+        XCTAssertFalse(
+            CLICommandAvailability.checking.needsPreparation(
+                expectedPath: expectedPath,
+                forceReset: false
+            )
+        )
+        XCTAssertFalse(
+            CLICommandAvailability.unavailable(
+                expectedPath: expectedPath,
+                setup: setup
+            ).needsPreparation(expectedPath: expectedPath, forceReset: false)
+        )
+        XCTAssertTrue(
+            CLICommandAvailability.unknown.needsPreparation(
+                expectedPath: expectedPath,
+                forceReset: false
+            )
+        )
+        XCTAssertTrue(
+            CLICommandAvailability.checking.needsPreparation(
+                expectedPath: expectedPath,
+                forceReset: true
+            )
+        )
+    }
+
     func testExactManagedCommandIsAvailable() {
         let setup = CLICommandAvailabilityService.pathSetup(forShellPath: "/bin/zsh")
         XCTAssertEqual(

@@ -105,6 +105,7 @@ extension AppModel {
                     model.cliInstallState = .ready(path: destination.path)
                     model.prepareCLICommandAvailability(forceReset: true)
                     model.clearAssistantLiveVerification()
+                    model.continueAssistantAccessVerification()
                     model.statusMessage = "Terminal command installed"
                 }
             } catch CLIArtifactInstallationError.conflict(let conflict) {
@@ -213,7 +214,7 @@ extension AppModel {
                     )
                 }
                 model.prepareCLICommandAvailability()
-                model.verifyAssistantAccessIfPossible()
+                model.continueAssistantAccessVerification()
             }
         }
     }
@@ -223,7 +224,12 @@ extension AppModel {
             clearCLICommandAvailability()
             return
         }
-        guard forceReset || cliCommandAvailability.expectedPath != commandPath else {
+        guard
+            cliCommandAvailability.needsPreparation(
+                expectedPath: commandPath,
+                forceReset: forceReset
+            )
+        else {
             return
         }
         clearCLICommandAvailability()
@@ -386,6 +392,17 @@ extension AppModel {
     private func verifyAssistantAccessIfPossible() {
         guard assistantLiveVerificationState == .notRun else { return }
         checkAssistantLiveVerification()
+    }
+
+    private func continueAssistantAccessVerification() {
+        switch cliCommandAvailability.automaticAssistantAccessVerificationAction {
+        case .checkCommandAvailability:
+            checkCLICommandAvailability()
+        case .verifyLiveAccess:
+            verifyAssistantAccessIfPossible()
+        case .noAction:
+            break
+        }
     }
 
     private var assistantShellCommandResolution: AssistantIntegrationShellCommandResolution {

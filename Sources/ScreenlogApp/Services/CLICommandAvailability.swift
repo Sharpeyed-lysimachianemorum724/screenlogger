@@ -46,11 +46,35 @@ enum CLICommandAvailability: Equatable, Sendable {
             return nil
         }
     }
+
+    var automaticAssistantAccessVerificationAction: CLIAssistantAccessVerificationAction {
+        switch self {
+        case .unknown, .notChecked:
+            return .checkCommandAvailability
+        case .available:
+            return .verifyLiveAccess
+        case .checking, .unavailable, .shadowed, .checkFailed:
+            return .noAction
+        }
+    }
+
+    func needsPreparation(expectedPath: String, forceReset: Bool) -> Bool {
+        if forceReset { return true }
+        if isChecking { return false }
+        return self.expectedPath != expectedPath
+    }
 }
 
-/// Checks the user's login-shell command lookup only after an explicit Settings
-/// action. It never edits shell configuration; Settings can only copy an
-/// explicit setup command for a recognized shell.
+enum CLIAssistantAccessVerificationAction: Equatable, Sendable {
+    case checkCommandAvailability
+    case verifyLiveAccess
+    case noAction
+}
+
+/// Checks the user's login-shell command lookup during automatic integration
+/// verification or after an explicit Settings action. It never edits shell
+/// configuration; Settings can only copy an explicit setup command for a
+/// recognized shell.
 enum CLICommandAvailabilityService {
     static func notChecked(expectedExecutable: URL) -> CLICommandAvailability {
         .notChecked(
