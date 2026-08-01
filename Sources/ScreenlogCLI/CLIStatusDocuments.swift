@@ -6,13 +6,7 @@ import ScreenlogCore
 /// human prose. Human-readable `screenlog status` output remains unchanged.
 struct CLIStatusDocument: Encodable, Equatable {
     enum Health: String, Codable { case ok, degraded }
-    enum Issue: String, Codable, CaseIterable {
-        case dataRootUnavailable = "data_root_unavailable"
-        case frameStatisticsUnavailable = "frame_statistics_unavailable"
-        case screenRecordingUnavailable = "screen_recording_unavailable"
-        case accessibilityUnavailable = "accessibility_unavailable"
-        case lowDiskSpace = "low_disk_space"
-    }
+    typealias Issue = CLIDiagnosticIssue
     enum Warning: String, Codable { case accessibilityUnavailable = "accessibility_unavailable" }
 
     let schemaVersion: Int
@@ -88,18 +82,7 @@ struct CLIStatusDocument: Encodable, Equatable {
 /// assistant without needlessly disclosing account-specific filesystem data.
 struct CLIDoctorDocument: Encodable, Equatable {
     enum Health: String, Codable { case ok, degraded }
-    enum Issue: String, Codable {
-        case bridgeUnavailable = "bridge_unavailable"
-        case incompatibleProtocol = "incompatible_protocol"
-        case socketUnavailable = "socket_unavailable"
-        case unexpectedPing = "unexpected_ping"
-        case dataRootMismatch = "data_root_mismatch"
-        case dataRootUnavailable = "data_root_unavailable"
-        case screenRecordingUnavailable = "screen_recording_unavailable"
-        case accessibilityUnavailable = "accessibility_unavailable"
-        case lowDiskSpace = "low_disk_space"
-        case frameStatisticsUnavailable = "frame_statistics_unavailable"
-    }
+    typealias Issue = CLIDiagnosticIssue
     enum Warning: String, Codable {
         case accessibilityUnavailable = "accessibility_unavailable"
         case productVersionDifference = "product_version_difference"

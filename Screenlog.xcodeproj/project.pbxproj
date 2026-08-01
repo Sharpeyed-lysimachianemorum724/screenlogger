@@ -262,6 +262,7 @@
 		AE686457E1D8F13EAFB1E142 /* LibraryDeletionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 025772940E17C9D64008CE17 /* LibraryDeletionModels.swift */; };
 		AEDADB94F65FCCDA8A28E5E5 /* ExclusionsSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C94C213A2912FEC61E4E83B /* ExclusionsSettingsPane.swift */; };
 		AEE3BDE82A34F349AFCFE47E /* ImageIO.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 142B20186384045C9F7CC603 /* ImageIO.framework */; };
+		AEF9310A307777D5524DCDF2 /* CLIDiagnosticIssue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F59F3FF883C5AD598024AE4 /* CLIDiagnosticIssue.swift */; };
 		AF68F6F1F253FFDA407A0328 /* AppModel+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBB8B8E1CA5084975B9CA7B5 /* AppModel+Search.swift */; };
 		B04F3FA32C88CA543F81F0B2 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 33B520EAD65674EC8542373D /* Accelerate.framework */; };
 		B073101511A8C6C39A9123DA /* LibraryRestoreServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 728A5FEE5458752118C15F2D /* LibraryRestoreServiceTests.swift */; };
@@ -480,6 +481,7 @@
 		09B7D3755B736B9D9F645A87 /* TimelineStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineStageView.swift; sourceTree = "<group>"; };
 		0C0C474D03A2B56D077A292B /* Store+StructuredSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Store+StructuredSearch.swift"; sourceTree = "<group>"; };
 		0E06E0EF5ED98A58B68F6CB6 /* AssistantIntegrationsSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantIntegrationsSettingsSection.swift; sourceTree = "<group>"; };
+		0F59F3FF883C5AD598024AE4 /* CLIDiagnosticIssue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIDiagnosticIssue.swift; sourceTree = "<group>"; };
 		12A1F3F0E27A7F4B991D8232 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		12E2E3A3474930F8481B7CE6 /* ApplicationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ApplicationServices.framework; path = System/Library/Frameworks/ApplicationServices.framework; sourceTree = SDKROOT; };
 		133A7B014E783FB83236D51B /* LibraryExportServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryExportServiceTests.swift; sourceTree = "<group>"; };
@@ -890,6 +892,7 @@
 				B487B8CB8B2AE230F9A8C026 /* AssistantIntegrationService+Lifecycle.swift */,
 				4C98B097597D1B2F6CC7F1C6 /* AssistantIntegrationService+OpenClaw.swift */,
 				524B907A9C3E289C7C0F855F /* CLIArtifactInstallationService.swift */,
+				0F59F3FF883C5AD598024AE4 /* CLIDiagnosticIssue.swift */,
 				FAB8B92AAA02FC135A0BAF68 /* CLIInteroperabilityState.swift */,
 				66F092F3A43E725E41D42248 /* LibraryAssistantHandoff.swift */,
 			);
@@ -1988,6 +1991,7 @@
 				735CCFBF02E0F60F6126B155 /* AssistantIntegrationService.swift in Sources */,
 				BD6AEF2B8633E126447F57D6 /* BrowserURLService.swift in Sources */,
 				3A4AF6DBE7BF2BAA21AB7E20 /* CLIArtifactInstallationService.swift in Sources */,
+				AEF9310A307777D5524DCDF2 /* CLIDiagnosticIssue.swift in Sources */,
 				E3EFC392037990A9D40E29C1 /* CLIInteroperabilityState.swift in Sources */,
 				348390B7E968B330E337CD3D /* CaptureOnceFailure.swift in Sources */,
 				BB42889E1238106D6476DF9F /* CapturePauseReason.swift in Sources */,

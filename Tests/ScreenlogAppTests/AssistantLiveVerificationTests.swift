@@ -52,7 +52,11 @@ final class AssistantLiveVerificationTests: XCTestCase {
         XCTAssertEqual(
             classify(
                 status: 1,
-                issues: ["screen_recording_unavailable", "low_disk_space"],
+                issues: [
+                    "accessibility_unavailable",
+                    "screen_recording_unavailable",
+                    "low_disk_space",
+                ],
                 bridgeConnected: true
             ),
             .succeeded

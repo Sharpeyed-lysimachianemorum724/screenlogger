@@ -57,7 +57,8 @@ enum AssistantLiveVerificationService {
             return .failed(.invalidResponse)
         }
 
-        let nonBlockingIssues: Set<DoctorIssue> = [
+        let nonBlockingIssues: Set<CLIDiagnosticIssue> = [
+            .accessibilityUnavailable,
             .screenRecordingUnavailable,
             .lowDiskSpace,
         ]
@@ -96,19 +97,7 @@ enum AssistantLiveVerificationService {
 
 private struct DoctorDocument: Decodable {
     let schemaVersion: Int
-    let issues: [DoctorIssue]
+    let issues: [CLIDiagnosticIssue]
     let cliVersion: String
     let bridgeConnected: Bool
-}
-
-private enum DoctorIssue: String, Decodable {
-    case bridgeUnavailable = "bridge_unavailable"
-    case incompatibleProtocol = "incompatible_protocol"
-    case socketUnavailable = "socket_unavailable"
-    case unexpectedPing = "unexpected_ping"
-    case dataRootMismatch = "data_root_mismatch"
-    case dataRootUnavailable = "data_root_unavailable"
-    case screenRecordingUnavailable = "screen_recording_unavailable"
-    case lowDiskSpace = "low_disk_space"
-    case frameStatisticsUnavailable = "frame_statistics_unavailable"
 }
