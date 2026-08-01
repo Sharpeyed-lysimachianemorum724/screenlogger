@@ -73,6 +73,18 @@ jobs:
             --expected-tag "$RELEASE_TAG" \
             --output build/releases
 
+      - name: Generate signed update feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          test -n "$SPARKLE_ED_PRIVATE_KEY"
+          dmg=(build/releases/Screenlogger-*.dmg)
+          test "${#dmg[@]}" -eq 1
+          Scripts/generate-update-feed.sh \
+            --archive "${dmg[0]}" \
+            --output build/releases/appcast.xml \
+            --tag "$RELEASE_TAG"
+
       - name: Compile routed UI contracts
         run: |
           xcodebuild \
@@ -97,6 +109,7 @@ jobs:
             build/releases/Screenlogger-*.zip
             build/releases/Screenlogger-*.zip.sha256
             build/releases/Screenlogger-*.json
+            build/releases/appcast.xml
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -123,7 +136,7 @@ jobs:
       - name: Create or refresh the ad-hoc signed draft release
         run: |
           shopt -s nullglob
-          assets=(release-assets/Screenlogger-*)
+          assets=(release-assets/Screenlogger-* release-assets/appcast.xml)
           if (( ${#assets[@]} == 0 )); then
             echo "error: verified release artifact is empty" >&2
             exit 1
@@ -146,5 +159,5 @@ jobs:
               --draft \
               --prerelease \
               --title "Screenlogger $RELEASE_TAG - ad-hoc signed preview" \
-              --notes "Ad-hoc signed preview build; it is not Developer ID signed or notarized. Verify the DMG's published SHA-256, open it, then drag Screenlogger to Applications. Automatic replacement remains disabled until Developer ID signing and notarization are available."
+              --notes "Ad-hoc signed preview build; it is not Developer ID signed or notarized. Verify the DMG's published SHA-256 for the first installation. In-app updates use Screenlogger's separate Ed25519 signing key and signed update feed."
           fi

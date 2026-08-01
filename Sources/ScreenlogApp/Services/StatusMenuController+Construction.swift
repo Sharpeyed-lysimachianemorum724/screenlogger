@@ -160,6 +160,13 @@ extension StatusMenuController {
             ))
         menu.addItem(
             makeItem(
+                title: "Check for Updates...",
+                action: #selector(checkForUpdates(_:)),
+                tag: .checkForUpdates,
+                symbol: "arrow.triangle.2.circlepath"
+            ))
+        menu.addItem(
+            makeItem(
                 title: "Quit Screenlogger",
                 action: #selector(quitApp(_:)),
                 tag: .quit,

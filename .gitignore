@@ -21,5 +21,4 @@ SCRATCH/
 *.ipa
 *.dSYM.zip
 *.dSYM
-Screenlog.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 build/

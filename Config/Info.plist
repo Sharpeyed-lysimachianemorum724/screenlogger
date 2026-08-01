@@ -36,5 +36,19 @@
 	<string>Screenlogger asks macOS to open and control Terminal only when you choose to launch an assistant with a search request.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright (c) 2026 Screenlogger contributors. MIT License.</string>
+	<key>SUFeedURL</key>
+	<string>https://radkawar.github.io/screenlogger/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>Bjy/ZcViaUi1FZ3Cl5tahdNK9EOfa2k9sEtIE1Bg1ts=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
 </dict>
 </plist>

@@ -32,6 +32,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case libraryRecoveryEnd = 15
         case captureOnce = 16
         case captureStatus = 17
+        case checkForUpdates = 18
 
         var accessibilityIdentifier: String {
             switch self {
@@ -51,6 +52,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             case .libraryRecoveryEnd: return "status-menu.library-recovery-end"
             case .captureOnce: return "status-menu.capture-once"
             case .captureStatus: return "status-menu.capture-status"
+            case .checkForUpdates: return "status-menu.check-for-updates"
             }
         }
     }

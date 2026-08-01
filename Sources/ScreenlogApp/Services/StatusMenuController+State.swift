@@ -191,6 +191,12 @@ extension StatusMenuController {
                     item.isHidden = false
                 }
                 item.isEnabled = true
+            case .checkForUpdates:
+                item.isEnabled = AppUpdateController.shared.canCheckForUpdates
+                item.toolTip =
+                    appModel.airgapMode
+                    ? "Turn off Keep Screenlogger Offline to check for updates"
+                    : "Check GitHub Releases for a newer verified version"
             default:
                 break
             }

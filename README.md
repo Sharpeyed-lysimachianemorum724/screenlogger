@@ -16,6 +16,8 @@ ID signing and notarization are being prepared.
 - Search from Terminal with the `screenlog` command.
 - Hand a reviewed search request to Claude Code, Codex, Cursor, Grok Build, or
   OpenClaw.
+- Check, install, and relaunch into cryptographically signed updates from the
+  app. Automatic checks remain off until enabled in Settings.
 
 ## Install
 

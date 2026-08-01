@@ -9,6 +9,7 @@ struct SupportSettingsPane: View {
     @State private var showingDiagnosticsContents = false
     @State private var showingUserGuide = false
     @State private var showingVersionDetails = false
+    @ObservedObject private var updates = AppUpdateController.shared
 
     let openPrivacy: () -> Void
 
@@ -107,6 +108,56 @@ struct SupportSettingsPane: View {
             }
 
             SettingsCard(padding: 0) {
+                VStack(spacing: 0) {
+                    SettingsCardRow(
+                        icon: "arrow.triangle.2.circlepath",
+                        title: "Software Updates",
+                        subtitle: updateSubtitle
+                    ) {
+                        Button("Check Now") {
+                            updates.checkForUpdates()
+                        }
+                        .controlSize(.small)
+                        .disabled(!updates.canCheckForUpdates)
+                        .accessibilityHint(updateCheckAccessibilityHint)
+                        .accessibilityIdentifier("settings.support.updates.check")
+                    }
+                    .padding(14)
+
+                    Divider().padding(.leading, 58)
+
+                    SettingsCardRow(
+                        icon: "clock.arrow.circlepath",
+                        title: "Check Automatically",
+                        subtitle: "Look for a newer signed release about once a day."
+                    ) {
+                        Toggle(
+                            "Check Automatically",
+                            isOn: Binding(
+                                get: { updates.automaticallyChecksForUpdates },
+                                set: { updates.setAutomaticallyChecksForUpdates($0) }
+                            )
+                        )
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .accessibilityLabel("Check for updates automatically")
+                        .accessibilityValue(
+                            SettingsAccessibilityValue.onOff(
+                                updates.automaticallyChecksForUpdates
+                            )
+                        )
+                        .accessibilityHint(
+                            model.airgapMode
+                                ? "The preference is saved, but checks stay paused while Screenlogger is offline"
+                                : "Let Screenlogger check the signed update feed in the background"
+                        )
+                        .accessibilityIdentifier("settings.support.updates.automatic")
+                    }
+                    .padding(14)
+                }
+            }
+
+            SettingsCard(padding: 0) {
                 DisclosureGroup(isExpanded: $showingVersionDetails) {
                     VStack(spacing: 0) {
                         Divider().padding(.leading, 44)
@@ -155,6 +206,21 @@ struct SupportSettingsPane: View {
         case .completed: return "Diagnostics Ready"
         case .failed: return "Diagnostics Need Attention"
         }
+    }
+
+    private var updateSubtitle: String {
+        if model.airgapMode {
+            return "Paused while Keep Screenlogger Offline is enabled."
+        }
+        return updates.automaticallyChecksForUpdates
+            ? "Screenlogger checks the signed release feed automatically."
+            : "Check the signed release feed whenever you choose."
+    }
+
+    private var updateCheckAccessibilityHint: String {
+        model.airgapMode
+            ? "Turn off Keep Screenlogger Offline in Privacy settings first"
+            : "Check for a newer cryptographically verified Screenlogger release"
     }
 
     private var diagnosticsSubtitle: String {

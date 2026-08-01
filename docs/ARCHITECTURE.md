@@ -39,3 +39,13 @@ and fails when the checked-in project differs.
 The implementation uses public Apple frameworks including SwiftUI, AppKit,
 ScreenCaptureKit, Vision, AVFoundation, ApplicationServices, ServiceManagement,
 OSLog, and Core Graphics, plus system SQLite and compression libraries.
+
+## Updates
+
+Sparkle provides the native update interface, atomic app replacement, and
+relaunch behavior. It reads a signed appcast from the project's GitHub Pages
+site and downloads DMGs from the project's GitHub Releases. The app requires
+both a signed feed and pre-extraction Ed25519 archive verification. The private
+key is held outside the repository in the maintainer Keychain and the
+`SPARKLE_ED_PRIVATE_KEY` Actions secret. Keep Screenlogger Offline gates every
+update check through the updater delegate.

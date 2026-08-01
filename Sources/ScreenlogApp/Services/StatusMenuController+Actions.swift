@@ -53,6 +53,10 @@ extension StatusMenuController {
         NSApp.orderFrontStandardAboutPanel(sender)
     }
 
+    @objc func checkForUpdates(_ sender: Any?) {
+        AppUpdateController.shared.checkForUpdates()
+    }
+
     @objc func openPrivacySettings(_ sender: Any?) {
         if appModel.permissions.isCaptureReady {
             appModel.openProductSettings(.privacyPermissions)

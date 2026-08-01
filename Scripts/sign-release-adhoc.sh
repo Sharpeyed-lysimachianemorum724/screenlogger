@@ -25,6 +25,7 @@ APP="$1"
 CLI="$2"
 CLI_DIRECTORY="$(dirname "$CLI")"
 APP_FRAMEWORK="$APP/Contents/Frameworks/ScreenlogCore.framework"
+SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 BUNDLED_CLI="$APP/Contents/MacOS/screenlog"
 CLI_FRAMEWORK="$CLI_DIRECTORY/ScreenlogCore.framework"
 
@@ -53,6 +54,7 @@ require_executable() {
 
 require_directory "$APP" "app bundle"
 require_directory "$APP_FRAMEWORK" "embedded framework"
+require_directory "$SPARKLE_FRAMEWORK" "embedded Sparkle framework"
 require_executable "$BUNDLED_CLI" "bundled CLI"
 require_directory "$CLI_FRAMEWORK" "standalone CLI framework"
 require_executable "$CLI" "standalone CLI"
@@ -75,6 +77,15 @@ sign_artifact() {
 # Sign every nested artifact before the bundle that seals it. Explicit stable
 # identifiers replace Xcode's incomplete linker-generated placeholder identity.
 sign_artifact "$APP_FRAMEWORK" "dev.screenlog.core"
+# Xcode's binary-package copy strips development headers from Sparkle. Seal the
+# resulting framework version while retaining the upstream helper identifiers
+# and entitlements that its updater processes require.
+/usr/bin/codesign \
+  --force \
+  --sign - \
+  --timestamp=none \
+  --preserve-metadata=identifier,entitlements,flags \
+  "$SPARKLE_FRAMEWORK/Versions/Current"
 sign_artifact "$BUNDLED_CLI" "dev.screenlog.cli"
 /usr/bin/codesign \
   --force \

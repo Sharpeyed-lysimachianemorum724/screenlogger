@@ -50,7 +50,13 @@ require a network connection.
 Website-icon fetching is off by default. When enabled, Screenlogger sends only a
 domain name to DuckDuckGo's public icon endpoint. It does not send screenshots,
 recognized text, full page addresses, or Library identifiers for this feature.
-Keep Screenlogger Offline disables optional network requests.
+
+Update checks are also off by default. When enabled or started manually,
+Screenlogger requests its signed update feed from `radkawar.github.io` and the
+selected DMG from `github.com/radkawar/screenlogger`. The request does not
+contain Library content, searches, captured metadata, or a system profile. Keep
+Screenlogger Offline suspends both scheduled and manual update checks while it
+is enabled.
 
 ## Assistant integrations
 

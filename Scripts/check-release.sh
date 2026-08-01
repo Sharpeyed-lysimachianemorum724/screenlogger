@@ -97,6 +97,13 @@ APP_INFO="$APP_PATH/Contents/Info.plist"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/Screenlogger"
 BUNDLED_CLI="$APP_PATH/Contents/MacOS/screenlog"
 APP_FRAMEWORK="$APP_PATH/Contents/Frameworks/ScreenlogCore.framework"
+SPARKLE_FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+SPARKLE_VERSION="$SPARKLE_FRAMEWORK/Versions/Current"
+SPARKLE_INFO="$SPARKLE_VERSION/Resources/Info.plist"
+SPARKLE_EXECUTABLE="$SPARKLE_VERSION/Sparkle"
+SPARKLE_UPDATER="$SPARKLE_VERSION/Updater.app"
+SPARKLE_DOWNLOADER="$SPARKLE_VERSION/XPCServices/Downloader.xpc"
+SPARKLE_INSTALLER="$SPARKLE_VERSION/XPCServices/Installer.xpc"
 APP_FRAMEWORK_EXECUTABLE="$APP_FRAMEWORK/Versions/A/ScreenlogCore"
 CLI_FRAMEWORK_EXECUTABLE="$CLI_FRAMEWORK/Versions/A/ScreenlogCore"
 APP_FRAMEWORK_INFO="$APP_FRAMEWORK/Versions/A/Resources/Info.plist"
@@ -236,6 +243,12 @@ validate_structure_nodes() {
   require_regular_file "$APP_PATH/Contents/Resources/Assets.car" "compiled app assets" || true
   require_regular_file "$APP_PATH/Contents/Resources/AppIcon.icns" "app icon" || true
   require_directory "$APP_FRAMEWORK" "embedded app framework" || true
+  require_directory "$SPARKLE_FRAMEWORK" "embedded Sparkle framework" || true
+  require_regular_file "$SPARKLE_INFO" "Sparkle Info.plist" || true
+  require_executable "$SPARKLE_EXECUTABLE" "Sparkle executable" || true
+  require_directory "$SPARKLE_UPDATER" "Sparkle updater app" || true
+  require_directory "$SPARKLE_DOWNLOADER" "Sparkle downloader service" || true
+  require_directory "$SPARKLE_INSTALLER" "Sparkle installer service" || true
   require_directory "$CLI_FRAMEWORK" "standalone CLI framework" || true
   require_regular_file "$STANDALONE_SKILL" "standalone CLI assistant skill" || true
 
@@ -261,6 +274,31 @@ check_plist_value "$APP_INFO" "CFBundleIdentifier" "dev.screenlog.app" "app bund
 check_plist_value "$APP_INFO" "CFBundlePackageType" "APPL" "app package type"
 check_plist_value "$APP_INFO" "CFBundleExecutable" "Screenlogger" "app executable identity"
 check_plist_value "$APP_INFO" "CFBundleName" "Screenlogger" "app product name"
+check_plist_value \
+  "$APP_INFO" \
+  "SUFeedURL" \
+  "https://radkawar.github.io/screenlogger/appcast.xml" \
+  "signed update feed URL"
+check_plist_value \
+  "$APP_INFO" \
+  "SUPublicEDKey" \
+  "Bjy/ZcViaUi1FZ3Cl5tahdNK9EOfa2k9sEtIE1Bg1ts=" \
+  "update signing public key"
+check_plist_value \
+  "$APP_INFO" \
+  "SUVerifyUpdateBeforeExtraction" \
+  "true" \
+  "pre-extraction update verification"
+check_plist_value \
+  "$APP_INFO" \
+  "SURequireSignedFeed" \
+  "true" \
+  "signed update feed requirement"
+check_plist_value \
+  "$SPARKLE_INFO" \
+  "CFBundleIdentifier" \
+  "org.sparkle-project.Sparkle" \
+  "Sparkle bundle identity"
 
 APP_VERSION="$(plist_value "$APP_INFO" "CFBundleShortVersionString" || true)"
 APP_BUILD="$(plist_value "$APP_INFO" "CFBundleVersion" || true)"

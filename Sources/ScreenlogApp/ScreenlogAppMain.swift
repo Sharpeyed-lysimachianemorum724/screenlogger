@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Darwin
 import ScreenlogCore
 import SwiftUI
@@ -21,6 +22,7 @@ struct ScreenlogAppMain: App {
 
 private struct ScreenloggerCommands: Commands {
     @ObservedObject var model: AppModel
+    @ObservedObject private var updates = AppUpdateController.shared
 
     var body: some Commands {
         // Keep the native menu placements while sourcing every product key
@@ -81,6 +83,14 @@ private struct ScreenloggerCommands: Commands {
         }
 
         CommandGroup(after: .appInfo) {
+            Button("Check for Updates...") {
+                updates.checkForUpdates()
+            }
+            .disabled(!updates.canCheckForUpdates)
+            .accessibilityIdentifier("commands.check-for-updates")
+
+            Divider()
+
             Button("Permissions & Privacy...") {
                 model.openProductSettings(.privacyPermissions)
             }
@@ -132,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusMenuController: StatusMenuController?
     private var instanceLockFD: Int32 = -1
+    private var updaterNetworkPolicyCancellable: AnyCancellable?
 
     /// Typed window intents relayed by a second process to the already-running
     /// menu bar app. Reopen is intentionally not a launch argument: it is the
@@ -238,6 +249,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Bootstrap store / capture / IPC off the critical click path as much as possible.
         appModel.bootstrap()
+        AppUpdateController.shared.start(networkAccessAllowed: !appModel.airgapMode)
+        updaterNetworkPolicyCancellable = appModel.$airgapMode
+            .removeDuplicates()
+            .sink { offline in
+                AppUpdateController.shared.setNetworkAccessAllowed(!offline)
+            }
         statusMenuController.refreshAppearance()
 
         // A first launch that still needs required permission must never look
@@ -260,6 +277,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         releaseInstanceLock()
         statusMenuController?.invalidate()
         statusMenuController = nil
+        updaterNetworkPolicyCancellable?.cancel()
+        updaterNetworkPolicyCancellable = nil
         appModel.shutdown()
     }
 

@@ -31,6 +31,11 @@ settings:
       ENABLE_HARDENED_RUNTIME: "YES"
       # Never let local/ad-hoc Release builds gain debugger attachment rights.
       CODE_SIGN_INJECT_BASE_ENTITLEMENTS: "NO"
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.9.2
 # Public Apple system frameworks required by Screenlogger's local capture,
 # recognition, storage, and interface stack.
 #
@@ -128,6 +133,7 @@ targets:
         # The embed phase strips development headers, so the copied framework
         # must be re-signed to keep its resource seal valid.
         codeSign: true
+      - package: Sparkle
       # The Settings "Install CLI" action must work from a distributed app,
       # not only from a developer checkout. This build-order dependency makes
       # the signed CLI available to the app's copy phase below.
