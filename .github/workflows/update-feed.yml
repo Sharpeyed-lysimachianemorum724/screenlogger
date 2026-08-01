@@ -37,6 +37,7 @@ jobs:
         run: |
           test -n "$RELEASE_TAG"
           test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = "false"
+          test "$(gh release view "$RELEASE_TAG" --json isPrerelease --jq .isPrerelease)" = "false"
           mkdir -p site
           gh release download "$RELEASE_TAG" \
             --pattern appcast.xml \
@@ -46,6 +47,18 @@ jobs:
           grep -Fq "<!-- sparkle-signatures:" site/appcast.xml
           grep -Fq "edSignature:" site/appcast.xml
           grep -Fq "github.com/radkawar/screenlogger/releases/download/$RELEASE_TAG/" site/appcast.xml
+
+          dmg_name="Screenlogger-${RELEASE_TAG}-macos-universal.dmg"
+          grep -Fq "/$RELEASE_TAG/$dmg_name" site/appcast.xml
+          mkdir -p release-check
+          gh release download "$RELEASE_TAG" \
+            --pattern "$dmg_name" \
+            --pattern "$dmg_name.sha256" \
+            --dir release-check
+          (
+            cd release-check
+            sha256sum -c "$dmg_name.sha256"
+          )
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4

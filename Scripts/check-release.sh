@@ -13,7 +13,7 @@ FAILURES=0
 
 usage() {
   cat <<EOF
-Usage: $0 [--structure|--ad-hoc|--signing] [Screenlogger.app] [screenlog]
+Usage: $0 [--structure|--ad-hoc|--developer-id|--signing] [Screenlogger.app] [screenlog]
 
 Modes:
   --structure  Verify release structure, identity, resources,
@@ -21,8 +21,11 @@ Modes:
   --ad-hoc     Run --structure, then require complete ad-hoc signatures with
                stable identifiers, bound bundle metadata, sealed resources,
                and consistent universal slices.
-  --signing    Run --structure, then require Developer ID signatures,
-               Hardened Runtime, Gatekeeper acceptance, and notarization.
+  --developer-id
+               Run --structure, then require complete Developer ID signatures,
+               secure timestamps, Hardened Runtime, and one consistent Team ID.
+  --signing    Run --developer-id, then require Gatekeeper acceptance and a
+               stapled notarization ticket on the app.
 
 With no mode, --signing is used for compatibility with earlier invocations.
 The standalone CLI must have ScreenlogCore.framework and skill/ beside it.
@@ -51,6 +54,9 @@ while (( $# > 0 )); do
       ;;
     --ad-hoc|--adhoc)
       MODE="ad-hoc"
+      ;;
+    --developer-id|--developerid)
+      MODE="developer-id"
       ;;
     --signing|--signed|--strict)
       MODE="signing"
@@ -101,9 +107,13 @@ SPARKLE_FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
 SPARKLE_VERSION="$SPARKLE_FRAMEWORK/Versions/Current"
 SPARKLE_INFO="$SPARKLE_VERSION/Resources/Info.plist"
 SPARKLE_EXECUTABLE="$SPARKLE_VERSION/Sparkle"
+SPARKLE_AUTOUPDATE="$SPARKLE_VERSION/Autoupdate"
 SPARKLE_UPDATER="$SPARKLE_VERSION/Updater.app"
 SPARKLE_DOWNLOADER="$SPARKLE_VERSION/XPCServices/Downloader.xpc"
 SPARKLE_INSTALLER="$SPARKLE_VERSION/XPCServices/Installer.xpc"
+SPARKLE_UPDATER_EXECUTABLE="$SPARKLE_UPDATER/Contents/MacOS/Updater"
+SPARKLE_DOWNLOADER_EXECUTABLE="$SPARKLE_DOWNLOADER/Contents/MacOS/Downloader"
+SPARKLE_INSTALLER_EXECUTABLE="$SPARKLE_INSTALLER/Contents/MacOS/Installer"
 APP_FRAMEWORK_EXECUTABLE="$APP_FRAMEWORK/Versions/A/ScreenlogCore"
 CLI_FRAMEWORK_EXECUTABLE="$CLI_FRAMEWORK/Versions/A/ScreenlogCore"
 APP_FRAMEWORK_INFO="$APP_FRAMEWORK/Versions/A/Resources/Info.plist"
@@ -246,9 +256,15 @@ validate_structure_nodes() {
   require_directory "$SPARKLE_FRAMEWORK" "embedded Sparkle framework" || true
   require_regular_file "$SPARKLE_INFO" "Sparkle Info.plist" || true
   require_executable "$SPARKLE_EXECUTABLE" "Sparkle executable" || true
+  require_executable "$SPARKLE_AUTOUPDATE" "Sparkle autoupdate tool" || true
   require_directory "$SPARKLE_UPDATER" "Sparkle updater app" || true
   require_directory "$SPARKLE_DOWNLOADER" "Sparkle downloader service" || true
   require_directory "$SPARKLE_INSTALLER" "Sparkle installer service" || true
+  require_executable "$SPARKLE_UPDATER_EXECUTABLE" "Sparkle updater executable" || true
+  require_executable "$SPARKLE_DOWNLOADER_EXECUTABLE" \
+    "Sparkle downloader executable" || true
+  require_executable "$SPARKLE_INSTALLER_EXECUTABLE" \
+    "Sparkle installer executable" || true
   require_directory "$CLI_FRAMEWORK" "standalone CLI framework" || true
   require_regular_file "$STANDALONE_SKILL" "standalone CLI assistant skill" || true
 
@@ -528,7 +544,11 @@ if [[ "$MODE" == "ad-hoc" ]]; then
   exit 0
 fi
 
-for command_name in codesign spctl xcrun; do
+required_signing_commands=(codesign)
+if [[ "$MODE" == "signing" ]]; then
+  required_signing_commands+=(spctl xcrun)
+fi
+for command_name in "${required_signing_commands[@]}"; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     fail "required signing verification tool is unavailable: $command_name"
   fi
@@ -538,37 +558,75 @@ if (( FAILURES > 0 )); then
   exit 1
 fi
 
+APP_SIGNATURE_DETAILS="$(codesign -dvvv "$APP_PATH" 2>&1 || true)"
+EXPECTED_TEAM_ID="$({
+  grep '^TeamIdentifier=' <<<"$APP_SIGNATURE_DETAILS" || true
+} | awk -F= 'NR == 1 {print $2}')"
+if [[ -z "$EXPECTED_TEAM_ID" || "$EXPECTED_TEAM_ID" == "not set" ]]; then
+  fail "app signature has no Team ID"
+elif [[ "$EXPECTED_TEAM_ID" != "3UX5N7Y8TY" ]]; then
+  fail "app signature uses untrusted Team ID $EXPECTED_TEAM_ID"
+fi
+
 check_signature() {
   local artifact="$1"
   local label="$2"
+  local expected_identifier="$3"
+  local deep="$4"
+  local architecture
   local details
+  local verify_arguments=(--verify --strict)
 
-  if ! codesign --verify --deep --strict --verbose=2 "$artifact" >/dev/null 2>&1; then
+  if [[ "$deep" == "1" ]]; then
+    verify_arguments+=(--deep)
+  fi
+  if ! codesign "${verify_arguments[@]}" --verbose=2 "$artifact" >/dev/null 2>&1; then
     fail "$label has an invalid or missing code signature"
     return
   fi
 
-  details="$(codesign -dvvv "$artifact" 2>&1 || true)"
-  if ! grep -q '^Authority=Developer ID Application:' <<<"$details"; then
-    fail "$label is not signed with a Developer ID Application certificate"
-  elif grep -q '^TeamIdentifier=not set$' <<<"$details"; then
-    fail "$label signature has no Team ID"
-  else
-    pass "$label Developer ID signature"
-  fi
+  for architecture in arm64 x86_64; do
+    if ! codesign "${verify_arguments[@]}" --arch "$architecture" "$artifact" \
+      >/dev/null 2>&1; then
+      fail "$label $architecture slice has an invalid code signature"
+      continue
+    fi
+    details="$(codesign -d --arch "$architecture" -vvv "$artifact" 2>&1 || true)"
+    if ! grep -q "^Identifier=$expected_identifier$" <<<"$details"; then
+      fail "$label $architecture slice has an unexpected identifier"
+    fi
+    if ! grep -q '^Authority=Developer ID Application:' <<<"$details"; then
+      fail "$label $architecture slice is not signed with Developer ID Application"
+    fi
+    if ! grep -q "^TeamIdentifier=$EXPECTED_TEAM_ID$" <<<"$details"; then
+      fail "$label $architecture slice does not use Team ID $EXPECTED_TEAM_ID"
+    fi
+    if ! grep -Eq '^CodeDirectory .*flags=.*runtime' <<<"$details"; then
+      fail "$label $architecture slice does not enable Hardened Runtime"
+    fi
+    if ! grep -q '^Timestamp=' <<<"$details"; then
+      fail "$label $architecture slice has no secure signing timestamp"
+    fi
+  done
 
-  if grep -Eq '^CodeDirectory .*flags=.*runtime' <<<"$details"; then
-    pass "$label Hardened Runtime"
-  else
-    fail "$label does not enable Hardened Runtime"
-  fi
+  pass "$label has complete Developer ID signatures for Team ID $EXPECTED_TEAM_ID"
 }
 
-check_signature "$APP_FRAMEWORK" "embedded framework"
-check_signature "$BUNDLED_CLI" "bundled CLI"
-check_signature "$APP_PATH" "app"
-check_signature "$CLI_FRAMEWORK" "standalone CLI framework"
-check_signature "$CLI_PATH" "standalone CLI"
+check_signature "$SPARKLE_UPDATER" "Sparkle updater" \
+  "org.sparkle-project.Sparkle.Updater" 1
+check_signature "$SPARKLE_DOWNLOADER" "Sparkle downloader service" \
+  "org.sparkle-project.DownloaderService" 1
+check_signature "$SPARKLE_INSTALLER" "Sparkle installer service" \
+  "org.sparkle-project.InstallerLauncher" 1
+check_signature "$SPARKLE_AUTOUPDATE" "Sparkle autoupdate tool" \
+  "org.sparkle-project.Sparkle.Autoupdate" 0
+check_signature "$SPARKLE_VERSION" "Sparkle framework" \
+  "org.sparkle-project.Sparkle" 1
+check_signature "$APP_FRAMEWORK" "embedded framework" "dev.screenlog.core" 0
+check_signature "$BUNDLED_CLI" "bundled CLI" "dev.screenlog.cli" 0
+check_signature "$APP_PATH" "app" "dev.screenlog.app" 1
+check_signature "$CLI_FRAMEWORK" "standalone CLI framework" "dev.screenlog.core" 0
+check_signature "$CLI_PATH" "standalone CLI" "dev.screenlog.cli" 0
 
 set +e
 APP_ENTITLEMENTS_RAW="$(codesign -d --xml --entitlements - "$APP_PATH" 2>&1)"
@@ -581,6 +639,22 @@ if [[ "$APP_ENTITLEMENTS_RAW" == *"<?xml"* ]]; then
     pass "app signed entitlement set is parseable"
   else
     fail "could not parse the app's signed entitlements"
+  fi
+  SIGNED_ENTITLEMENTS_JSON="$(
+    printf '%s' "$APP_ENTITLEMENTS_XML" \
+      | plutil -convert json -o - - 2>/dev/null \
+      || true
+  )"
+  EXPECTED_ENTITLEMENTS_JSON="$(
+    plutil -convert json -o - "$ROOT/Config/Screenlog.entitlements" \
+      2>/dev/null \
+      || true
+  )"
+  if [[ -n "$SIGNED_ENTITLEMENTS_JSON" \
+    && "$SIGNED_ENTITLEMENTS_JSON" == "$EXPECTED_ENTITLEMENTS_JSON" ]]; then
+    pass "app Developer ID signature contains the configured entitlement set"
+  else
+    fail "app Developer ID entitlements differ from Config/Screenlog.entitlements"
   fi
   for forbidden_entitlement in \
     com.apple.security.cs.allow-jit \
@@ -601,6 +675,15 @@ elif (( APP_ENTITLEMENTS_STATUS == 0 )); then
   pass "app has an empty signed entitlement set"
 else
   fail "could not read the app's signed entitlements"
+fi
+
+if [[ "$MODE" == "developer-id" ]]; then
+  if (( FAILURES > 0 )); then
+    echo "release Developer ID signature verification failed with $FAILURES issue(s)" >&2
+    exit 1
+  fi
+  echo "release Developer ID signature verification passed"
+  exit 0
 fi
 
 if spctl --assess --type execute --verbose=4 "$APP_PATH" >/dev/null 2>&1; then

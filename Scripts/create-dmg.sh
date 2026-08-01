@@ -113,7 +113,7 @@ if [[ -e "$OUTPUT" && "$REPLACE" -ne 1 ]]; then
   exit 1
 fi
 
-for command_name in ditto hdiutil osascript sips stat tiffutil; do
+for command_name in diskutil ditto hdiutil osascript plutil sips stat tiffutil; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "error: required tool is unavailable: $command_name" >&2
     exit 1
@@ -122,19 +122,20 @@ done
 
 WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/screenlogger-dmg.XXXXXX")"
 STAGE="$WORK_ROOT/stage"
-MOUNT_POINT="/Volumes/$VOLUME_NAME"
+BUILD_VOLUME_NAME="Screenlogger Build $$"
+BUILD_MOUNT="/Volumes/$BUILD_VOLUME_NAME"
 VERIFY_MOUNT="$WORK_ROOT/verify"
 RW_DMG="$WORK_ROOT/Screenlogger-read-write.dmg"
 FINAL_DMG="$WORK_ROOT/Screenlogger.dmg"
 BACKGROUND_1X="$WORK_ROOT/installer-background-1x.tiff"
 BACKGROUND_2X="$WORK_ROOT/installer-background-2x.tiff"
-MOUNTED_PATH=""
+MOUNTED_DEVICE=""
 
 detach_if_mounted() {
-  if [[ -n "$MOUNTED_PATH" ]]; then
-    /usr/bin/hdiutil detach "$MOUNTED_PATH" -force >/dev/null 2>&1 || true
+  if [[ -n "$MOUNTED_DEVICE" ]]; then
+    /usr/bin/hdiutil detach "$MOUNTED_DEVICE" -force >/dev/null 2>&1 || true
   fi
-  MOUNTED_PATH=""
+  MOUNTED_DEVICE=""
 }
 
 cleanup_dmg_work() {
@@ -144,6 +145,7 @@ cleanup_dmg_work() {
 trap cleanup_dmg_work EXIT INT TERM
 
 mkdir -p "$STAGE/.background" "$VERIFY_MOUNT"
+VERIFY_MOUNT="$(cd "$VERIFY_MOUNT" && pwd -P)"
 /usr/bin/ditto "$APP" "$STAGE/Screenlogger.app"
 /bin/ln -s /Applications "$STAGE/Applications"
 
@@ -165,33 +167,36 @@ fi
 
 /usr/bin/hdiutil create \
   -srcfolder "$STAGE" \
-  -volname "$VOLUME_NAME" \
+  -volname "$BUILD_VOLUME_NAME" \
   -fs HFS+ \
   -format UDRW \
   -ov \
   "$RW_DMG" >/dev/null
 
-if [[ -e "$MOUNT_POINT" ]]; then
-  echo "error: another volume is already mounted at $MOUNT_POINT" >&2
-  exit 1
-fi
 ATTACH_OUTPUT="$(/usr/bin/hdiutil attach \
   -readwrite \
   -noverify \
   -noautoopen \
   -owners off \
   "$RW_DMG")"
-if ! /usr/bin/grep -Fq "$MOUNT_POINT" <<<"$ATTACH_OUTPUT"; then
+MOUNTED_DEVICE="$(
+  /usr/bin/awk -v mount="$BUILD_MOUNT" 'index($0, mount) > 0 {print $1}' \
+    <<<"$ATTACH_OUTPUT"
+)"
+if ! /usr/bin/grep -Fq "$BUILD_MOUNT" <<<"$ATTACH_OUTPUT"; then
   echo "error: disk image did not mount at its expected volume path" >&2
   exit 1
 fi
-MOUNTED_PATH="$MOUNT_POINT"
-
-if [[ -f "$MOUNT_POINT/.VolumeIcon.icns" ]] && command -v SetFile >/dev/null 2>&1; then
-  SetFile -a C "$MOUNT_POINT"
+if [[ "$MOUNTED_DEVICE" != /dev/disk* ]]; then
+  echo "error: could not resolve the mounted disk image device" >&2
+  exit 1
 fi
 
-/usr/bin/osascript - "$VOLUME_NAME" <<'APPLESCRIPT'
+if [[ -f "$BUILD_MOUNT/.VolumeIcon.icns" ]] && command -v SetFile >/dev/null 2>&1; then
+  SetFile -a C "$BUILD_MOUNT"
+fi
+
+/usr/bin/osascript - "$BUILD_VOLUME_NAME" <<'APPLESCRIPT'
 on run arguments
     set volumeName to item 1 of arguments
     tell application "Finder"
@@ -222,13 +227,14 @@ on run arguments
 end run
 APPLESCRIPT
 
-if [[ ! -f "$MOUNT_POINT/.DS_Store" ]]; then
+if [[ ! -f "$BUILD_MOUNT/.DS_Store" ]]; then
   echo "error: Finder did not persist the installer layout" >&2
   exit 1
 fi
 /bin/sync
-/usr/bin/hdiutil detach "$MOUNT_POINT" >/dev/null
-MOUNTED_PATH=""
+/usr/sbin/diskutil renameVolume "$MOUNTED_DEVICE" "$VOLUME_NAME" >/dev/null
+/usr/bin/hdiutil detach "$MOUNTED_DEVICE" >/dev/null
+MOUNTED_DEVICE=""
 
 /usr/bin/hdiutil convert "$RW_DMG" \
   -format UDZO \
@@ -237,14 +243,29 @@ MOUNTED_PATH=""
   -o "$FINAL_DMG" >/dev/null
 
 /usr/bin/hdiutil verify "$FINAL_DMG" >/dev/null
-/usr/bin/hdiutil attach \
+VERIFY_ATTACH_OUTPUT="$(/usr/bin/hdiutil attach \
   -readonly \
   -noverify \
   -nobrowse \
   -owners off \
   -mountpoint "$VERIFY_MOUNT" \
-  "$FINAL_DMG" >/dev/null
-MOUNTED_PATH="$VERIFY_MOUNT"
+  "$FINAL_DMG")"
+MOUNTED_DEVICE="$(
+  /usr/bin/awk -v mount="$VERIFY_MOUNT" '$NF == mount {print $1}' <<<"$VERIFY_ATTACH_OUTPUT"
+)"
+if [[ "$MOUNTED_DEVICE" != /dev/disk* ]]; then
+  echo "error: could not resolve the verification disk image device" >&2
+  exit 1
+fi
+
+VERIFIED_VOLUME_NAME="$(
+  /usr/sbin/diskutil info -plist "$MOUNTED_DEVICE" \
+    | /usr/bin/plutil -extract VolumeName raw -o - -
+)"
+if [[ "$VERIFIED_VOLUME_NAME" != "$VOLUME_NAME" ]]; then
+  echo "error: verified disk image has volume name $VERIFIED_VOLUME_NAME" >&2
+  exit 1
+fi
 
 if [[ ! -d "$VERIFY_MOUNT/Screenlogger.app" \
   || ! -L "$VERIFY_MOUNT/Applications" \
@@ -255,8 +276,8 @@ if [[ ! -d "$VERIFY_MOUNT/Screenlogger.app" \
   exit 1
 fi
 
-/usr/bin/hdiutil detach "$VERIFY_MOUNT" >/dev/null
-MOUNTED_PATH=""
+/usr/bin/hdiutil detach "$MOUNTED_DEVICE" >/dev/null
+MOUNTED_DEVICE=""
 /bin/mv -f "$FINAL_DMG" "$OUTPUT"
 
 echo "disk image verified"

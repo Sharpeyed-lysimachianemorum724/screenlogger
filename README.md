@@ -4,8 +4,8 @@ Screenlogger is a private screen memory for macOS. It captures your screen at a
 chosen interval, recognizes visible text on device, and lets you return to a
 moment through Library search or Timeline navigation.
 
-Screenlogger is currently a prerelease. Builds are ad-hoc signed while Developer
-ID signing and notarization are being prepared.
+Release builds are universal, Developer ID signed, notarized by Apple, and
+distributed through a stapled DMG.
 
 ## Highlights
 
@@ -25,8 +25,7 @@ Screenlogger requires macOS 14 or later.
 
 1. Download the DMG from the repository's Releases page.
 2. Open the DMG and drag Screenlogger into Applications.
-3. Control-click Screenlogger and choose Open if macOS warns about the current
-   ad-hoc signed build.
+3. Open Screenlogger from Applications.
 4. Follow Setup to allow Screen Recording and Accessibility. Both permissions
    are required for reliable capture and exclusions.
 5. Choose Start Capture.

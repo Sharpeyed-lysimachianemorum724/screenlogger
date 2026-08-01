@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build, ad-hoc sign, validate, and package a universal Screenlogger release.
+# Build, sign, validate, and package a universal Screenlogger release.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -7,6 +7,13 @@ OUTPUT_DIR="$ROOT/build/releases"
 PRODUCTS=""
 EXPECTED_TAG=""
 REPLACE=0
+SIGNING_MODE="ad-hoc"
+SIGNING_IDENTITY="${DEVELOPER_ID_APPLICATION:-}"
+SIGNING_TEAM_ID="${DEVELOPER_ID_TEAM_ID:-}"
+NOTARY_PROFILE="${SCREENLOGGER_NOTARY_PROFILE:-}"
+NOTARY_KEY_PATH="${SCREENLOGGER_NOTARY_KEY_PATH:-}"
+NOTARY_KEY_ID="${SCREENLOGGER_NOTARY_KEY_ID:-}"
+NOTARY_ISSUER_ID="${SCREENLOGGER_NOTARY_ISSUER_ID:-}"
 
 usage() {
   cat <<'USAGE'
@@ -16,12 +23,19 @@ Options:
   --products DIR       Package existing universal Release products instead of building.
   --output DIR         Write release assets here (default: build/releases).
   --expected-tag TAG   Require TAG to equal v<app marketing version>.
+  --signing MODE       Use ad-hoc or developer-id signing (default: ad-hoc).
+  --identity NAME      Developer ID Application identity for production signing.
+  --team-id ID         Require this Developer ID Team ID in every signature.
+  --notary-profile ID  Use a local notarytool Keychain credential profile.
+  --notary-key PATH    Use an App Store Connect API private key.
+  --notary-key-id ID   App Store Connect API key ID.
+  --notary-issuer ID   App Store Connect API issuer ID.
   --replace            Replace exact same-version assets already in the output directory.
   -h, --help           Show this help.
 
-This release path applies complete local ad-hoc signatures and verifies the
-result. It never uses Developer ID, notarizes, publishes, or replaces an
-installed application.
+Developer ID mode signs every nested executable with Hardened Runtime and a
+secure timestamp, notarizes and staples the app and DMG, and notarizes the
+technical ZIP. Packaging never publishes or replaces an installed application.
 USAGE
 }
 
@@ -51,6 +65,41 @@ while (( $# > 0 )); do
       EXPECTED_TAG="$2"
       shift 2
       ;;
+    --signing)
+      require_value "$1" "${2:-}"
+      SIGNING_MODE="$2"
+      shift 2
+      ;;
+    --identity)
+      require_value "$1" "${2:-}"
+      SIGNING_IDENTITY="$2"
+      shift 2
+      ;;
+    --team-id)
+      require_value "$1" "${2:-}"
+      SIGNING_TEAM_ID="$2"
+      shift 2
+      ;;
+    --notary-profile)
+      require_value "$1" "${2:-}"
+      NOTARY_PROFILE="$2"
+      shift 2
+      ;;
+    --notary-key)
+      require_value "$1" "${2:-}"
+      NOTARY_KEY_PATH="$2"
+      shift 2
+      ;;
+    --notary-key-id)
+      require_value "$1" "${2:-}"
+      NOTARY_KEY_ID="$2"
+      shift 2
+      ;;
+    --notary-issuer)
+      require_value "$1" "${2:-}"
+      NOTARY_ISSUER_ID="$2"
+      shift 2
+      ;;
     --replace)
       REPLACE=1
       shift
@@ -66,6 +115,26 @@ while (( $# > 0 )); do
       ;;
   esac
 done
+
+if [[ "$SIGNING_MODE" != "ad-hoc" && "$SIGNING_MODE" != "developer-id" ]]; then
+  echo "error: --signing must be ad-hoc or developer-id" >&2
+  exit 2
+fi
+if [[ "$SIGNING_MODE" == "developer-id" ]]; then
+  if [[ -z "$SIGNING_IDENTITY" ]]; then
+    echo "error: Developer ID mode requires --identity" >&2
+    exit 2
+  fi
+  if [[ -n "$NOTARY_PROFILE" ]]; then
+    if [[ -n "$NOTARY_KEY_PATH" || -n "$NOTARY_KEY_ID" || -n "$NOTARY_ISSUER_ID" ]]; then
+      echo "error: choose a notary Keychain profile or API key authentication" >&2
+      exit 2
+    fi
+  elif [[ -z "$NOTARY_KEY_PATH" || -z "$NOTARY_KEY_ID" || -z "$NOTARY_ISSUER_ID" ]]; then
+    echo "error: Developer ID mode requires complete notarytool authentication" >&2
+    exit 2
+  fi
+fi
 
 if [[ "$OUTPUT_DIR" != /* ]]; then
   OUTPUT_DIR="$ROOT/$OUTPUT_DIR"
@@ -85,7 +154,11 @@ if [[ -z "${DEVELOPER_DIR:-}" || ! -d "$DEVELOPER_DIR" ]]; then
   exit 1
 fi
 
-for command_name in codesign ditto find hdiutil lipo otool plutil shasum stat xcodebuild; do
+required_commands=(codesign ditto find hdiutil lipo otool plutil shasum stat xcodebuild)
+if [[ "$SIGNING_MODE" == "developer-id" ]]; then
+  required_commands+=(security spctl xcrun)
+fi
+for command_name in "${required_commands[@]}"; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "error: required tool is unavailable: $command_name" >&2
     exit 1
@@ -182,6 +255,14 @@ normalize_tree_timestamps() {
   /usr/bin/find -s "$tree" -depth -exec /usr/bin/touch -h -t "$ARCHIVE_TIMESTAMP" {} +
 }
 
+notarize_artifact() {
+  SCREENLOGGER_NOTARY_PROFILE="$NOTARY_PROFILE" \
+    SCREENLOGGER_NOTARY_KEY_PATH="$NOTARY_KEY_PATH" \
+    SCREENLOGGER_NOTARY_KEY_ID="$NOTARY_KEY_ID" \
+    SCREENLOGGER_NOTARY_ISSUER_ID="$NOTARY_ISSUER_ID" \
+    "$ROOT/Scripts/notarize-release-artifact.sh" "$1"
+}
+
 PACKAGE_NAME="Screenlogger-v$VERSION-macos-universal"
 STAGE="$WORK_ROOT/$PACKAGE_NAME"
 mkdir -p "$STAGE/CLI/skill"
@@ -196,11 +277,42 @@ mkdir -p "$STAGE/CLI/skill"
 /usr/bin/install -m 644 "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/THIRD_PARTY_NOTICES.md"
 
 # Xcode's CODE_SIGNING_ALLOWED=NO build leaves linker-generated placeholder
-# signatures whose identity is not the app's bundle identifier and which do not
-# bind Info.plist or Resources. Replace them inside-out in the disposable stage.
-"$ROOT/Scripts/sign-release-adhoc.sh" \
+# signatures. Replace them inside-out in the disposable release stage.
+RELEASE_CHECK_MODE=(--ad-hoc)
+if [[ "$SIGNING_MODE" == "developer-id" ]]; then
+  SIGNING_ARGUMENTS=(--identity "$SIGNING_IDENTITY")
+  if [[ -n "$SIGNING_TEAM_ID" ]]; then
+    SIGNING_ARGUMENTS+=(--team-id "$SIGNING_TEAM_ID")
+  fi
+  "$ROOT/Scripts/sign-release-developer-id.sh" \
+    "${SIGNING_ARGUMENTS[@]}" \
+    "$STAGE/Screenlogger.app" \
+    "$STAGE/CLI/screenlog"
+  RELEASE_CHECK_MODE=(--developer-id)
+else
+  "$ROOT/Scripts/sign-release-adhoc.sh" \
+    "$STAGE/Screenlogger.app" \
+    "$STAGE/CLI/screenlog"
+fi
+
+"$ROOT/Scripts/check-release.sh" "${RELEASE_CHECK_MODE[@]}" \
   "$STAGE/Screenlogger.app" \
   "$STAGE/CLI/screenlog"
+
+if [[ "$SIGNING_MODE" == "developer-id" ]]; then
+  # Staple the app itself before placing it in either distribution container.
+  # This preserves offline Gatekeeper validation after a user copies it out.
+  APP_NOTARY_ARCHIVE="$WORK_ROOT/Screenlogger-v$VERSION-notary.zip"
+  /usr/bin/ditto -c -k --keepParent --norsrc --noextattr --noqtn --noacl \
+    "$STAGE/Screenlogger.app" "$APP_NOTARY_ARCHIVE"
+  notarize_artifact "$APP_NOTARY_ARCHIVE"
+  xcrun stapler staple "$STAGE/Screenlogger.app"
+  xcrun stapler validate "$STAGE/Screenlogger.app"
+  RELEASE_CHECK_MODE=(--signing)
+  "$ROOT/Scripts/check-release.sh" "${RELEASE_CHECK_MODE[@]}" \
+    "$STAGE/Screenlogger.app" \
+    "$STAGE/CLI/screenlog"
+fi
 
 sha256() {
   /usr/bin/shasum -a 256 "$1" | /usr/bin/awk '{print $1}'
@@ -208,13 +320,22 @@ sha256() {
 
 PACKAGE_MANIFEST_PLIST="$WORK_ROOT/package-manifest.plist"
 /usr/bin/plutil -create xml1 "$PACKAGE_MANIFEST_PLIST"
-/usr/bin/plutil -insert schemaVersion -integer 1 "$PACKAGE_MANIFEST_PLIST"
+/usr/bin/plutil -insert schemaVersion -integer 2 "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert product -string Screenlogger "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert version -string "$VERSION" "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert build -string "$BUILD_NUMBER" "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert minimumMacOS -string "$MINIMUM_MACOS" "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert architectures -json '["arm64","x86_64"]' "$PACKAGE_MANIFEST_PLIST"
-/usr/bin/plutil -insert signing -string ad-hoc "$PACKAGE_MANIFEST_PLIST"
+/usr/bin/plutil -insert signing -string "$SIGNING_MODE" "$PACKAGE_MANIFEST_PLIST"
+/usr/bin/plutil -insert notarized -bool "$([[ "$SIGNING_MODE" == "developer-id" ]] && echo true || echo false)" \
+  "$PACKAGE_MANIFEST_PLIST"
+if [[ "$SIGNING_MODE" == "developer-id" ]]; then
+  PACKAGE_TEAM_ID="$(
+    /usr/bin/codesign -dvvv "$STAGE/Screenlogger.app" 2>&1 \
+      | /usr/bin/awk -F= '/^TeamIdentifier=/{team_id=$2} END{print team_id}'
+  )"
+  /usr/bin/plutil -insert teamID -string "$PACKAGE_TEAM_ID" "$PACKAGE_MANIFEST_PLIST"
+fi
 /usr/bin/plutil -insert sourceDateEpoch -integer "$SOURCE_EPOCH" "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert appExecutableSHA256 -string \
   "$(sha256 "$STAGE/Screenlogger.app/Contents/MacOS/Screenlogger")" \
@@ -229,10 +350,6 @@ PACKAGE_MANIFEST_PLIST="$WORK_ROOT/package-manifest.plist"
   "$(sha256 "$STAGE/CLI/skill/screenlog-cli-skill/SKILL.md")" \
   "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -convert json -o "$STAGE/package-manifest.json" "$PACKAGE_MANIFEST_PLIST"
-
-"$ROOT/Scripts/check-release.sh" --ad-hoc \
-  "$STAGE/Screenlogger.app" \
-  "$STAGE/CLI/screenlog"
 
 unset DYLD_LIBRARY_PATH DYLD_FRAMEWORK_PATH \
   DYLD_FALLBACK_LIBRARY_PATH DYLD_FALLBACK_FRAMEWORK_PATH || true
@@ -265,12 +382,18 @@ EXTRACT_ROOT="$WORK_ROOT/extracted"
 mkdir -p "$EXTRACT_ROOT"
 /usr/bin/ditto -x -k "$ARCHIVE_TMP" "$EXTRACT_ROOT"
 EXTRACTED="$EXTRACT_ROOT/$PACKAGE_NAME"
-"$ROOT/Scripts/check-release.sh" --ad-hoc \
+"$ROOT/Scripts/check-release.sh" "${RELEASE_CHECK_MODE[@]}" \
   "$EXTRACTED/Screenlogger.app" \
   "$EXTRACTED/CLI/screenlog"
 if [[ "$("$EXTRACTED/CLI/screenlog" --version)" != "$VERSION" ]]; then
   echo "error: extracted CLI version does not match app version $VERSION" >&2
   exit 1
+fi
+
+if [[ "$SIGNING_MODE" == "developer-id" ]]; then
+  # ZIPs cannot carry a stapled container ticket. Submitting the complete
+  # technical archive gives its standalone CLI and framework online tickets.
+  notarize_artifact "$ARCHIVE_TMP"
 fi
 
 ARCHIVE_SHA256="$(sha256 "$ARCHIVE_TMP")"
@@ -286,6 +409,24 @@ DMG_TMP="$WORK_ROOT/$PACKAGE_NAME.dmg"
   --output "$DMG_TMP" \
   --volume-name "Screenlogger $VERSION"
 
+if [[ "$SIGNING_MODE" == "developer-id" ]]; then
+  /usr/bin/codesign \
+    --force \
+    --sign "$SIGNING_IDENTITY" \
+    --timestamp \
+    "$DMG_TMP"
+  /usr/bin/codesign --verify --strict --verbose=2 "$DMG_TMP"
+  notarize_artifact "$DMG_TMP"
+  xcrun stapler staple "$DMG_TMP"
+  xcrun stapler validate "$DMG_TMP"
+  /usr/bin/codesign --verify --strict --verbose=2 "$DMG_TMP"
+  if ! spctl --assess --type open --context context:primary-signature \
+    --verbose=4 "$DMG_TMP" >/dev/null 2>&1; then
+    echo "error: Gatekeeper rejected the notarized DMG" >&2
+    exit 1
+  fi
+fi
+
 DMG_VERIFY_MOUNT="$WORK_ROOT/dmg-verify"
 mkdir -p "$DMG_VERIFY_MOUNT"
 /usr/bin/hdiutil attach \
@@ -295,7 +436,7 @@ mkdir -p "$DMG_VERIFY_MOUNT"
   -owners off \
   -mountpoint "$DMG_VERIFY_MOUNT" \
   "$DMG_TMP" >/dev/null
-"$ROOT/Scripts/check-release.sh" --ad-hoc \
+"$ROOT/Scripts/check-release.sh" "${RELEASE_CHECK_MODE[@]}" \
   "$DMG_VERIFY_MOUNT/Screenlogger.app" \
   "$EXTRACTED/CLI/screenlog"
 if [[ "$(sha256 "$DMG_VERIFY_MOUNT/Screenlogger.app/Contents/MacOS/Screenlogger")" \
@@ -314,13 +455,18 @@ printf '%s  %s\n' "$DMG_SHA256" "$PACKAGE_NAME.dmg" > "$DMG_CHECKSUM_TMP"
 RELEASE_MANIFEST_PLIST="$WORK_ROOT/release-manifest.plist"
 RELEASE_MANIFEST_TMP="$WORK_ROOT/$PACKAGE_NAME.json"
 /usr/bin/plutil -create xml1 "$RELEASE_MANIFEST_PLIST"
-/usr/bin/plutil -insert schemaVersion -integer 2 "$RELEASE_MANIFEST_PLIST"
+/usr/bin/plutil -insert schemaVersion -integer 3 "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert product -string Screenlogger "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert version -string "$VERSION" "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert build -string "$BUILD_NUMBER" "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert minimumMacOS -string "$MINIMUM_MACOS" "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert architectures -json '["arm64","x86_64"]' "$RELEASE_MANIFEST_PLIST"
-/usr/bin/plutil -insert signing -string ad-hoc "$RELEASE_MANIFEST_PLIST"
+/usr/bin/plutil -insert signing -string "$SIGNING_MODE" "$RELEASE_MANIFEST_PLIST"
+/usr/bin/plutil -insert notarized -bool "$([[ "$SIGNING_MODE" == "developer-id" ]] && echo true || echo false)" \
+  "$RELEASE_MANIFEST_PLIST"
+if [[ "$SIGNING_MODE" == "developer-id" ]]; then
+  /usr/bin/plutil -insert teamID -string "$PACKAGE_TEAM_ID" "$RELEASE_MANIFEST_PLIST"
+fi
 /usr/bin/plutil -insert sourceDateEpoch -integer "$SOURCE_EPOCH" "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert assetName -string "$PACKAGE_NAME.dmg" "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert assetBytes -integer "$DMG_SIZE" "$RELEASE_MANIFEST_PLIST"
@@ -381,6 +527,7 @@ fi
 
 echo "release package verified"
 echo "version: $VERSION ($BUILD_NUMBER)"
+echo "signing: $SIGNING_MODE"
 echo "installer: $OUTPUT_DIR/$PACKAGE_NAME.dmg"
 echo "installer sha256: $DMG_SHA256"
 echo "archive: $OUTPUT_DIR/$PACKAGE_NAME.zip"

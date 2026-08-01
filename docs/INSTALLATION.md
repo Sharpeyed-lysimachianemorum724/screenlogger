@@ -1,6 +1,6 @@
 # Installation
 
-## Install the prerelease DMG
+## Install the DMG
 
 Screenlogger requires macOS 14 or later.
 
@@ -8,7 +8,7 @@ Screenlogger requires macOS 14 or later.
 2. Verify the checksum if desired:
 
    ```sh
-   shasum -a 256 -c Screenlogger-v0.1.1-macos-universal.dmg.sha256
+   shasum -a 256 -c Screenlogger-v0.1.2-macos-universal.dmg.sha256
    ```
 
 3. Open the DMG.
@@ -16,8 +16,8 @@ Screenlogger requires macOS 14 or later.
 5. Open the installed copy from Applications. Do not run the copy inside the
    mounted DMG.
 
-The current prerelease is ad-hoc signed and is not notarized. If macOS blocks
-the first launch, Control-click Screenlogger, choose Open, and confirm Open.
+Public release builds are Developer ID signed, notarized by Apple, and carry a
+stapled ticket for offline Gatekeeper validation.
 
 ## First run
 
