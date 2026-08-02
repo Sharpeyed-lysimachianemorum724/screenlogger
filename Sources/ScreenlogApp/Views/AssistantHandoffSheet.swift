@@ -241,7 +241,7 @@ struct AssistantHandoffSheet: View {
 
     private var privacyDisclosure: some View {
         let message =
-            "Screenlogger shares only your search words and visible filters with the assistant you choose-never results, captured text, or screenshots."
+            "Screenlogger shares only your search words and visible filters with the assistant you choose. Results, captured text, and screenshots are never included."
 
         return Label(message, systemImage: "lock")
             .font(.caption)

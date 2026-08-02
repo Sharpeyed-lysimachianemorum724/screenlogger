@@ -16,41 +16,10 @@ struct PermissionsSetupProgress: View {
 
     var body: some View {
         GroupBox {
-            HStack(spacing: 12) {
-                stage(
-                    title: "Screen Recording",
-                    symbol: screenRecordingAllowed ? "checkmark.circle.fill" : "1.circle.fill",
-                    state: permissionStageState(.screenRecording),
-                    identifier: "setup.progress.permission"
-                )
-
-                Capsule()
-                    .fill(screenRecordingAllowed ? SLDesign.success : Color.secondary.opacity(0.22))
-                    .frame(maxWidth: 32)
-                    .frame(height: 2)
-                    .accessibilityHidden(true)
-
-                stage(
-                    title: "Accessibility",
-                    symbol: accessibilityAllowed ? "checkmark.circle.fill" : "2.circle.fill",
-                    state: permissionStageState(.accessibility),
-                    identifier: "setup.progress.accessibility"
-                )
-
-                Capsule()
-                    .fill(accessibilityAllowed ? SLDesign.success : Color.secondary.opacity(0.22))
-                    .frame(maxWidth: 32)
-                    .frame(height: 2)
-                    .accessibilityHidden(true)
-
-                stage(
-                    title: "Capture Choice",
-                    symbol: isRecording ? "checkmark.circle.fill" : "3.circle.fill",
-                    state: isRecording
-                        ? .complete
-                        : (screenRecordingAllowed && accessibilityAllowed ? .current : .upcoming),
-                    identifier: "setup.progress.capture"
-                )
+            ViewThatFits(in: .horizontal) {
+                horizontalProgress
+                    .fixedSize(horizontal: true, vertical: false)
+                verticalProgress
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
@@ -62,6 +31,60 @@ struct PermissionsSetupProgress: View {
         .accessibilityLabel("Setup progress")
         .accessibilityValue(progressTitle)
         .accessibilityIdentifier("setup.progress")
+    }
+
+    private var horizontalProgress: some View {
+        HStack(spacing: 12) {
+            screenRecordingStage
+            connector(complete: screenRecordingAllowed)
+            accessibilityStage
+            connector(complete: accessibilityAllowed)
+            captureStage
+        }
+    }
+
+    private var verticalProgress: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            screenRecordingStage
+            accessibilityStage
+            captureStage
+        }
+    }
+
+    private var screenRecordingStage: some View {
+        stage(
+            title: "Screen Recording",
+            symbol: screenRecordingAllowed ? "checkmark.circle.fill" : "1.circle.fill",
+            state: permissionStageState(.screenRecording),
+            identifier: "setup.progress.permission"
+        )
+    }
+
+    private var accessibilityStage: some View {
+        stage(
+            title: "Accessibility",
+            symbol: accessibilityAllowed ? "checkmark.circle.fill" : "2.circle.fill",
+            state: permissionStageState(.accessibility),
+            identifier: "setup.progress.accessibility"
+        )
+    }
+
+    private var captureStage: some View {
+        stage(
+            title: "Capture Choice",
+            symbol: isRecording ? "checkmark.circle.fill" : "3.circle.fill",
+            state: isRecording
+                ? .complete
+                : (screenRecordingAllowed && accessibilityAllowed ? .current : .upcoming),
+            identifier: "setup.progress.capture"
+        )
+    }
+
+    private func connector(complete: Bool) -> some View {
+        Capsule()
+            .fill(complete ? SLDesign.success : Color.secondary.opacity(0.22))
+            .frame(width: 24, height: 2)
+            .accessibilityHidden(true)
     }
 
     private enum StageState {
@@ -338,7 +361,9 @@ struct PermissionsNextActionCard: View {
 
     private var screenRecordingFirstInstruction: String {
         switch journeyState {
-        case .awaitingSystemSettings, .restartRequired, .requesting, .verificationFailed:
+        case .restartRequired:
+            return "Choose Quit & Reopen Screenlogger below."
+        case .awaitingSystemSettings, .requesting, .verificationFailed:
             return "Choose Open Screen Recording Settings below."
         case .needsRequest, .ready, .none:
             return "Choose Allow Screen Recording below."

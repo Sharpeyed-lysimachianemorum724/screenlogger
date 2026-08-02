@@ -5,7 +5,7 @@ import SwiftUI
 /// Screenlogger Library: fast query, progressive refinements, and visual results.
 struct FloatingSearchView: View {
     @EnvironmentObject var model: AppModel
-    @FocusState private var searchFocused: Bool
+    @State private var searchFocused = false
     @State private var focusResultsRequest = 0
     @State private var selectedSuggestionID: String?
     @State private var presentedSearchText = ""
@@ -40,6 +40,7 @@ struct FloatingSearchView: View {
             minWidth: SLDesign.workspaceMinimumWidth,
             minHeight: SLDesign.workspaceMinimumHeight
         )
+        .tint(model.accentSwiftUIColor)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             model.showSearchOperatorMenu = false
@@ -115,121 +116,35 @@ struct FloatingSearchView: View {
 
     private var searchInput: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                TextField(
-                    searchPlaceholder,
-                    text: presentedSearchBinding
-                )
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .focused($searchFocused)
-                .disabled(model.libraryStartupIssue != nil)
-                .accessibilityLabel("Search screen history")
-                .accessibilityHint("Use the arrow keys or Tab to move through suggestions")
-                .accessibilityIdentifier("library.search.field")
-                .onKeyPress(phases: .down) { keyPress in
-                    if let binding = model.keyboardShortcutBinding(for: .askAssistant),
-                        binding.matches(keyPress)
-                    {
-                        presentAssistantHandoff()
-                        return .handled
+            LibrarySearchField(
+                text: presentedSearchBinding,
+                isFocused: $searchFocused,
+                placeholder: searchPlaceholder,
+                isEnabled: model.libraryStartupIssue == nil,
+                onKeyEquivalent: handleSearchKeyEquivalent,
+                onSubmit: submitSearch,
+                onMoveSelection: moveSearchSelection,
+                onTab: moveAutocompleteSelectionForTab,
+                onDeleteWhenEmpty: removeLastCommittedOperator,
+                onEscape: handleSearchFieldEscape
+            )
+            .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28)
+            .onChange(of: model.searchQuery) { _, query in
+                assistantHandoffValidationMessage = nil
+                synchronizePresentedText(afterRawQueryChangedTo: query)
+            }
+            .onChange(of: searchFocused) { _, focused in
+                model.shellFocusSearch = focused
+                if focused {
+                    if suppressAutocompleteUntilEditorChanges {
+                        model.showSearchOperatorMenu = false
+                    } else {
+                        model.refreshSearchAutocomplete(for: presentedSearchText)
                     }
-                    guard keyPress.key == .return else { return .ignored }
-                    let shortcutModifiers = keyPress.modifiers.intersection([
-                        .command, .control, .option, .shift,
-                    ])
-                    guard shortcutModifiers.isEmpty else { return .ignored }
-                    if applySelectedAutocompleteRow() {
-                        return .handled
-                    }
+                } else {
                     commitRecognizedOperatorDrafts()
                     model.showSearchOperatorMenu = false
-                    model.startLibrarySearch()
-                    return .handled
                 }
-                .onKeyPress(.downArrow) {
-                    if moveAutocompleteSelection(by: 1) {
-                        return .handled
-                    }
-                    guard !model.filteredSearchResults.isEmpty else { return .ignored }
-                    searchFocused = false
-                    focusResultsRequest &+= 1
-                    return .handled
-                }
-                .onKeyPress(.upArrow) {
-                    moveAutocompleteSelection(by: -1) ? .handled : .ignored
-                }
-                .onKeyPress(.tab, phases: .down) { keyPress in
-                    moveAutocompleteSelectionForTab(
-                        backward: keyPress.modifiers.contains(.shift)
-                    ) ? .handled : .ignored
-                }
-                .onKeyPress(.delete) {
-                    guard presentedSearchText.isEmpty,
-                        let kind = SearchOperatorKind.allCases.reversed().first(where: {
-                            committedOperatorValues[$0] != nil
-                        })
-                    else { return .ignored }
-                    removeCommittedOperator(kind)
-                    return .handled
-                }
-                .onChange(of: model.searchQuery) { _, query in
-                    assistantHandoffValidationMessage = nil
-                    let wasWrittenByEditor =
-                        LibrarySearchQueryChangeRouting
-                        .shouldScheduleDebouncedSearch(
-                            changedQuery: query,
-                            lastEditorWrittenQuery: lastRawQueryWrittenByEditor
-                        )
-                    synchronizePresentedText(afterRawQueryChangedTo: query)
-                    guard wasWrittenByEditor else { return }
-                    model.scheduleSearchDebounced(autocompleteInput: presentedSearchText)
-                }
-                .onChange(of: searchFocused) { _, focused in
-                    model.shellFocusSearch = focused
-                    if focused {
-                        if suppressAutocompleteUntilEditorChanges {
-                            model.showSearchOperatorMenu = false
-                        } else {
-                            model.refreshSearchAutocomplete(for: presentedSearchText)
-                        }
-                    } else {
-                        commitRecognizedOperatorDrafts()
-                        model.showSearchOperatorMenu = false
-                    }
-                }
-
-                if !presentedSearchText.isEmpty {
-                    Button(action: clearSearchTextAndRestoreFocus) {
-                        Image(systemName: "xmark.circle.fill")
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Clear Search Text")
-                    .accessibilityLabel("Clear Search")
-                    .accessibilityHint(
-                        "Keeps your application, website, date, time, and session filters"
-                    )
-                    .accessibilityIdentifier("library.search.clear")
-                }
-            }
-            .padding(.horizontal, 9)
-            .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32)
-            .background(
-                Color(nsColor: .controlBackgroundColor),
-                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(
-                        Color(nsColor: .separatorColor).opacity(0.7),
-                        lineWidth: 1
-                    )
             }
             .overlay(alignment: .topLeading) {
                 if model.showSearchOperatorMenu, !model.searchAutocompleteRows.isEmpty {
@@ -239,7 +154,7 @@ struct FloatingSearchView: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: autocompleteMenuHeight, alignment: .top)
-                    .offset(y: 38)
+                    .offset(y: 34)
                     .accessibilitySortPriority(2)
                 }
             }
@@ -275,6 +190,53 @@ struct FloatingSearchView: View {
         }
         let contentHeight = CGFloat(rows.count * 48 + sectionKinds.count * 24 + 10)
         return min(300, max(72, contentHeight))
+    }
+
+    private func handleSearchKeyEquivalent(_ event: NSEvent) -> Bool {
+        guard let binding = model.keyboardShortcutBinding(for: .askAssistant),
+            binding.matches(event)
+        else { return false }
+        presentAssistantHandoff()
+        return true
+    }
+
+    private func submitSearch() {
+        if applySelectedAutocompleteRow() { return }
+        commitRecognizedOperatorDrafts()
+        model.showSearchOperatorMenu = false
+        model.startLibrarySearch()
+    }
+
+    private func moveSearchSelection(_ direction: Int) -> Bool {
+        if moveAutocompleteSelection(by: direction) { return true }
+        guard direction > 0, !model.filteredSearchResults.isEmpty else { return false }
+        searchFocused = false
+        focusResultsRequest &+= 1
+        return true
+    }
+
+    private func removeLastCommittedOperator() -> Bool {
+        guard presentedSearchText.isEmpty,
+            let kind = SearchOperatorKind.allCases.reversed().first(where: {
+                committedOperatorValues[$0] != nil
+            })
+        else { return false }
+        removeCommittedOperator(kind)
+        return true
+    }
+
+    private func handleSearchFieldEscape() -> Bool {
+        if model.showSearchOperatorMenu {
+            selectedSuggestionID = nil
+            model.showSearchOperatorMenu = false
+            return true
+        }
+        if !presentedSearchText.isEmpty {
+            clearSearchTextAndRestoreFocus()
+            return true
+        }
+        SearchWindowController.shared.hide()
+        return true
     }
 
     private var searchPlaceholder: String {
@@ -518,21 +480,30 @@ struct FloatingSearchView: View {
             set: { newValue in
                 suppressAutocompleteUntilEditorChanges = false
                 presentedSearchText = newValue
-                writeComposedRawQuery()
+                writeComposedRawQuery(from: newValue)
 
+                var autocompleteInput = newValue
                 if newValue.last?.isWhitespace == true,
-                    !draftedOperatorKinds.isEmpty,
+                    !draftedOperatorKinds(in: newValue).isEmpty,
                     hasBalancedQuotes(in: newValue)
                 {
-                    commitRecognizedOperatorDrafts()
+                    autocompleteInput = commitRecognizedOperatorDrafts(in: newValue)
                 }
+                // This binding is written only by the native editor. Starting
+                // its bounded debounce here avoids relying on SwiftUI to
+                // distinguish a rapid AppKit edit from a model-owned rewrite.
+                model.scheduleSearchDebounced(autocompleteInput: autocompleteInput)
             }
         )
     }
 
     private var draftedOperatorKinds: [SearchOperatorKind] {
+        draftedOperatorKinds(in: presentedSearchText)
+    }
+
+    private func draftedOperatorKinds(in editorText: String) -> [SearchOperatorKind] {
         SearchOperatorKind.allCases.filter { kind in
-            presentedSearchText.range(
+            editorText.range(
                 of: #"(?i)\b\#(kind.rawValue):"#,
                 options: .regularExpression
             ) != nil
@@ -547,9 +518,10 @@ struct FloatingSearchView: View {
 
     private func composeRawQuery(from editorText: String) -> String {
         var operatorTokens: [String] = []
+        let editorDraftKinds = Set(draftedOperatorKinds(in: editorText))
 
         for kind in SearchOperatorKind.allCases {
-            guard !draftedOperatorKinds.contains(kind),
+            guard !editorDraftKinds.contains(kind),
                 let value = committedOperatorValues[kind]
             else { continue }
             operatorTokens.append(operatorToken(kind, value: value))
@@ -573,12 +545,13 @@ struct FloatingSearchView: View {
         }.isMultiple(of: 2)
     }
 
-    private func writeComposedRawQuery() {
-        let rawQuery = composeRawQuery(from: presentedSearchText)
-        guard rawQuery != model.searchQuery else {
-            lastRawQueryWrittenByEditor = nil
-            return
-        }
+    private func writeComposedRawQuery(from editorText: String? = nil) {
+        let rawQuery = composeRawQuery(from: editorText ?? presentedSearchText)
+        // AppKit can report the same editor value more than once before
+        // SwiftUI delivers the corresponding model change. Keep the routing
+        // marker alive until `onChange` consumes it, or the final keystroke can
+        // lose both autocomplete and the debounced Library query.
+        guard rawQuery != model.searchQuery else { return }
         lastRawQueryWrittenByEditor = rawQuery
         model.searchQuery = rawQuery
     }
@@ -603,23 +576,27 @@ struct FloatingSearchView: View {
         )
     }
 
-    private func commitRecognizedOperatorDrafts() {
+    @discardableResult
+    private func commitRecognizedOperatorDrafts(in editorText: String? = nil) -> String {
+        let editorText = editorText ?? presentedSearchText
         let recognizedValues = recognizedOperatorValues(
-            from: SearchOperatorParser.parse(presentedSearchText)
+            from: SearchOperatorParser.parse(editorText)
         )
         guard !recognizedValues.isEmpty else {
-            writeComposedRawQuery()
-            return
+            writeComposedRawQuery(from: editorText)
+            return editorText
         }
 
         for (kind, value) in recognizedValues {
             committedOperatorValues[kind] = value
         }
-        presentedSearchText = editorText(
+        let remainingText = self.editorText(
             removing: recognizedValues,
-            from: presentedSearchText
+            from: editorText
         )
-        writeComposedRawQuery()
+        presentedSearchText = remainingText
+        writeComposedRawQuery(from: remainingText)
+        return remainingText
     }
 
     private func recognizedOperatorValues(
@@ -675,23 +652,43 @@ struct LibraryToolbarLocationView: View {
     }
 }
 
-/// State-aware capture and navigation controls hosted by AppKit's toolbar.
+/// State-aware capture status hosted by AppKit's toolbar. Window destinations
+/// are separate native toolbar items so they keep stable alignment.
 struct LibraryToolbarActionsView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        HStack(spacing: 14) {
+        ViewThatFits(in: .horizontal) {
+            captureStatus(labelStyle: .titleAndIcon)
+                .fixedSize(horizontal: true, vertical: false)
+            captureStatus(labelStyle: .iconOnly)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .tint(model.accentSwiftUIColor)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("library.chrome.toolbar-actions")
+    }
+
+    @ViewBuilder
+    private func captureStatus(labelStyle: ToolbarLabelStyle) -> some View {
+        if labelStyle == .titleAndIcon {
             SLCaptureStatusToolbarView(
                 setupOrigin: .library,
                 accessibilityIdentifier: "library.capture.status"
             )
-            SLPrimaryNavigation(current: .library)
-                .labelStyle(.titleAndIcon)
-                .foregroundStyle(.primary)
+            .labelStyle(.titleAndIcon)
+        } else {
+            SLCaptureStatusToolbarView(
+                setupOrigin: .library,
+                accessibilityIdentifier: "library.capture.status"
+            )
+            .labelStyle(.iconOnly)
         }
-        .fixedSize(horizontal: true, vertical: false)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("library.chrome.toolbar-actions")
+    }
+
+    private enum ToolbarLabelStyle: Equatable {
+        case titleAndIcon
+        case iconOnly
     }
 
 }

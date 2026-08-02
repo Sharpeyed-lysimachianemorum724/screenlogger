@@ -142,14 +142,3 @@ struct LibrarySearchPagePresentation: Equatable, Sendable {
     }
 
 }
-
-/// Keeps model-owned query mutations from being mistaken for fresh keyboard
-/// input by the SwiftUI observation bridge.
-enum LibrarySearchQueryChangeRouting {
-    static func shouldScheduleDebouncedSearch(
-        changedQuery: String,
-        lastEditorWrittenQuery: String?
-    ) -> Bool {
-        changedQuery == lastEditorWrittenQuery
-    }
-}

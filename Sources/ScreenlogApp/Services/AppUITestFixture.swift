@@ -43,9 +43,12 @@ import ScreenlogCore
             let permissions: PermissionsSnapshot
             let seedsHistory: Bool
             let grantsPermissionAfterOpeningSettings: Bool
+            let grantsPermissionsSequentially: Bool
             let selectsSessionAfterLoad: Bool
             let capturesContentSnapshot: Bool
             let appearance: String?
+            let accent: AccentColorPreference?
+            let increasedContrast: Bool
             let snapshotSurface: SnapshotSurface
             let settingsDestination: SettingsSidebarItem?
             let snapshotsAtMinimumWindowSize: Bool
@@ -178,10 +181,18 @@ import ScreenlogCore
                     || environment["SCREENLOG_UI_TEST_SEED_HISTORY_WITHOUT_PERMISSION"] == "1",
                 grantsPermissionAfterOpeningSettings:
                     environment["SCREENLOG_UI_TEST_GRANT_PERMISSION_AFTER_OPENING_SETTINGS"] == "1",
+                grantsPermissionsSequentially:
+                    environment["SCREENLOG_UI_TEST_GRANT_PERMISSION_AFTER_OPENING_SETTINGS"]
+                    == "sequential",
                 selectsSessionAfterLoad:
                     environment["SCREENLOG_UI_TEST_SELECT_SESSION_AFTER_LOAD"] == "1",
                 capturesContentSnapshot: environment["SCREENLOG_UI_TEST_SNAPSHOT"] == "content",
                 appearance: environment["SCREENLOG_UI_TEST_APPEARANCE"],
+                accent: environment["SCREENLOG_UI_TEST_ACCENT"].flatMap {
+                    AccentColorPreference(rawValue: $0)
+                },
+                increasedContrast:
+                    environment["SCREENLOG_UI_TEST_INCREASED_CONTRAST"] == "1",
                 snapshotSurface: SnapshotSurface(
                     rawValue: environment["SCREENLOG_UI_TEST_SNAPSHOT_SURFACE"] ?? "visible"
                 ) ?? .visible,
@@ -370,13 +381,25 @@ import ScreenlogCore
         static func installIfRequested(on model: AppModel) {
             guard let configuration, let permissionsSnapshot else { return }
 
-            switch configuration.appearance {
-            case "light": model.appearancePreference = .light
-            case "dark": model.appearancePreference = .dark
-            default: break
-            }
+            applyPresentationOverridesIfRequested(on: model)
 
             model.permissions = permissionsSnapshot
+            model.permissionFlowCoordinator = PermissionFlowCoordinator(
+                snapshot: permissionsSnapshot,
+                requestClient: PermissionRequestClient(
+                    status: { permission in
+                        guard let snapshot = AppUITestFixture.permissionsSnapshot else {
+                            return false
+                        }
+                        return permission == .screenRecording
+                            ? snapshot.screenRecording
+                            : snapshot.accessibility
+                    },
+                    request: { _ in false }
+                ),
+                settingsOpener: PermissionSystemSettingsOpener(openURL: { _ in true })
+            )
+            model.permissionJourney = model.permissionFlowCoordinator.journey
             model.capturePauseReason = nil
             model.isRecording = false
             model.statusMessage = "Ready - capture off"
@@ -439,6 +462,27 @@ import ScreenlogCore
             }
         }
 
+        static func applyPresentationOverridesIfRequested(on model: AppModel) {
+            guard let configuration else { return }
+
+            switch configuration.appearance {
+            case "light": model.appearancePreference = .light
+            case "dark": model.appearancePreference = .dark
+            default: break
+            }
+            if let accent = configuration.accent {
+                model.accentColorPreference = accent
+            }
+            model.applyAppearancePreference()
+
+            guard configuration.increasedContrast else { return }
+            NSApp.appearance = NSAppearance(
+                named: configuration.appearance == "dark"
+                    ? .accessibilityHighContrastDarkAqua
+                    : .accessibilityHighContrastAqua
+            )
+        }
+
         static func startCaptureIfRequested(on model: AppModel) -> Bool {
             guard configuration != nil, permissionsSnapshot?.isCaptureReady == true else {
                 return false
@@ -471,13 +515,19 @@ import ScreenlogCore
         /// the successful Setup path testable without reading or mutating TCC.
         @discardableResult
         static func simulateSetupPermissionGrantIfRequested(on model: AppModel) -> Bool {
-            guard let configuration, configuration.grantsPermissionAfterOpeningSettings else {
+            guard let configuration,
+                configuration.grantsPermissionAfterOpeningSettings
+                    || configuration.grantsPermissionsSequentially
+            else {
                 return false
             }
-            let granted = PermissionsSnapshot(
-                screenRecording: true,
-                accessibility: true
-            )
+            let current =
+                permissionsSnapshot
+                ?? PermissionsSnapshot(screenRecording: false, accessibility: false)
+            let granted =
+                configuration.grantsPermissionsSequentially && !current.screenRecording
+                ? PermissionsSnapshot(screenRecording: true, accessibility: false)
+                : PermissionsSnapshot(screenRecording: true, accessibility: true)
             // Model the external System Settings round trip after the button
             // action has completed so the rendered Setup view observes a real
             // denied-to-allowed transition.
@@ -564,12 +614,12 @@ import ScreenlogCore
                 ),
                 SeedMoment(
                     offsetMs: -(24 * hourMs + 5 * minuteMs),
-                    foreground: "Local-first software design and privacy research",
-                    title: "Research Notes",
+                    foreground: "Designing for privacy and clear user consent",
+                    title: "Privacy Design Principles",
                     bundleID: "com.apple.Safari",
                     displayName: "Safari",
-                    domain: "research.fixture.example",
-                    url: "https://research.fixture.example/local-first",
+                    domain: "developer.apple.com",
+                    url: "https://developer.apple.com/design/human-interface-guidelines/privacy",
                     accent: NSColor.systemBlue
                 ),
                 SeedMoment(
@@ -604,12 +654,12 @@ import ScreenlogCore
                 ),
                 SeedMoment(
                     offsetMs: -(12 * minuteMs),
-                    foreground: "Keyboard navigation patterns for a native Mac application",
-                    title: "Mac Interface Guidelines",
+                    foreground: "Navigation and keyboard interactions for Mac apps",
+                    title: "Human Interface Guidelines",
                     bundleID: "com.apple.Safari",
                     displayName: "Safari",
-                    domain: "docs.fixture.example",
-                    url: "https://docs.fixture.example/navigation",
+                    domain: "developer.apple.com",
+                    url: "https://developer.apple.com/design/human-interface-guidelines/",
                     accent: NSColor.systemBlue
                 ),
                 SeedMoment(
@@ -628,8 +678,8 @@ import ScreenlogCore
                     title: "Quarterly Planning Notes",
                     bundleID: "com.apple.TextEdit",
                     displayName: "TextEdit",
-                    domain: "fixture.example",
-                    url: "https://fixture.example/quarterly-planning",
+                    domain: nil,
+                    url: nil,
                     accent: NSColor.systemGreen
                 ),
             ]

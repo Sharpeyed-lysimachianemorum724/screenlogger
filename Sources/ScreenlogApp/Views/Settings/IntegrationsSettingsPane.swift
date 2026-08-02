@@ -14,12 +14,6 @@ struct IntegrationsSettingsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsChrome.cardSpacing) {
-            LocalToolAccessSettingsSection(
-                refresh: { model.refreshIntegrationSettings(automatic: false) },
-                onRemove: { isConfirmingCLIRemoval = true }
-            )
-            .settingsDestinationAnchor(.integrationsLocalTools)
-
             AssistantIntegrationsSettingsSection(
                 onRemove: { pendingRemoval = $0 },
                 onResolve: { target, inspection in
@@ -30,6 +24,12 @@ struct IntegrationsSettingsPane: View {
                 }
             )
             .settingsDestinationAnchor(.integrationsAssistantConnections)
+
+            LocalToolAccessSettingsSection(
+                refresh: { model.refreshIntegrationSettings(automatic: false) },
+                onRemove: { isConfirmingCLIRemoval = true }
+            )
+            .settingsDestinationAnchor(.integrationsLocalTools)
 
         }
         .confirmationDialog(

@@ -3,9 +3,9 @@ import SwiftUI
 
 /// A concise offline guide for the everyday journeys people need most.
 struct SupportUserGuideSheet: View {
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
     @State private var selection: SupportGuideTopic? = .gettingStarted
+    let onDismiss: () -> Void
 
     var body: some View {
         NavigationSplitView {
@@ -38,11 +38,14 @@ struct SupportUserGuideSheet: View {
         .tint(model.accentSwiftUIColor)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
+                Button("Done", action: onDismiss)
                     .accessibilityIdentifier("settings.guide.done")
             }
         }
-        .onExitCommand { dismiss() }
+        .onKeyPress(.escape) {
+            onDismiss()
+            return .handled
+        }
     }
 
     @ViewBuilder
@@ -186,7 +189,7 @@ struct SupportUserGuideSheet: View {
         action: @escaping () -> Void
     ) -> some View {
         let button = Button {
-            dismiss()
+            onDismiss()
             // Let the sheet finish relinquishing key-window focus before the
             // destination window or settings pane is activated.
             DispatchQueue.main.async(execute: action)

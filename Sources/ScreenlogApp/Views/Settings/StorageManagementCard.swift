@@ -4,6 +4,7 @@ import SwiftUI
 /// Automatic storage behavior and the limits that feed the capture engine.
 struct StorageManagementCard: View {
     @EnvironmentObject private var model: AppModel
+    let applyLimits: () -> Void
 
     var body: some View {
         SettingsCard(padding: 0) {
@@ -17,7 +18,7 @@ struct StorageManagementCard: View {
                 }
                 .padding(14)
 
-                Divider().padding(.leading, 58)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                 VStack(alignment: .leading, spacing: 12) {
                     Picker("Automatic storage", selection: $model.storageMode) {
@@ -38,7 +39,7 @@ struct StorageManagementCard: View {
                 .padding(14)
 
                 if model.storageMode == .limit {
-                    Divider().padding(.leading, 58)
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                     VStack(alignment: .leading, spacing: 12) {
                         LabeledContent("Remove capture media after") {
@@ -76,9 +77,19 @@ struct StorageManagementCard: View {
 
                         Label(limitConsequenceSummary, systemImage: limitConsequenceSystemImage)
                             .font(.caption)
-                            .foregroundStyle(limitConsequenceIsWarning ? .orange : .secondary)
+                            .foregroundStyle(
+                                limitConsequenceIsWarning ? SLDesign.warning : .secondary
+                            )
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("settings.storage.limit-consequence")
+
+                        Button("Apply Limits Now", action: applyLimits)
+                            .buttonStyle(.bordered)
+                            .disabled(exclusiveOperationActive)
+                            .accessibilityHint(
+                                "Review permanent removal of capture media beyond the current limits"
+                            )
+                            .accessibilityIdentifier("settings.storage.apply-limits")
                     }
                     .padding(14)
                     .accessibilityElement(children: .contain)
@@ -129,6 +140,15 @@ struct StorageManagementCard: View {
             retentionDays: model.retentionDays,
             storageCapMB: model.storageCapMB
         )
+    }
+
+    private var exclusiveOperationActive: Bool {
+        model.libraryExportState.isExporting
+            || model.libraryRestoreState.isBusy
+            || model.libraryRestoreReview != nil
+            || model.storageMaintenanceInProgress
+            || model.libraryDeletionInProgress
+            || model.libraryDeletionReview != nil
     }
 
     private var currentPreflight: RetentionPreflightReport? {

@@ -134,8 +134,8 @@ struct ExclusionOutcomeLabel: View {
                 .accessibilityHidden(true)
             Text(presentation.outcome.title)
                 .fontWeight(.semibold)
-            Text(" | ")
-                .foregroundStyle(.tertiary)
+            Divider()
+                .frame(height: 10)
                 .accessibilityHidden(true)
             Text(presentation.provenanceSummary)
         }

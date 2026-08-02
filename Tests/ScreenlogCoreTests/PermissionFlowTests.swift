@@ -69,7 +69,7 @@ final class PermissionFlowTests: XCTestCase {
         XCTAssertEqual(openCalls, 0)
     }
 
-    func testOneExplicitActionMakesOneSupportedRequestAndRoutesToSettings() {
+    func testOneExplicitActionMakesOneSupportedRequestWithoutStackingSystemSettings() {
         var requested: [ScreenlogPermission] = []
         var checked: [ScreenlogPermission] = []
         var opened: [URL] = []
@@ -95,9 +95,10 @@ final class PermissionFlowTests: XCTestCase {
 
         XCTAssertEqual(requested, [.screenRecording])
         XCTAssertEqual(checked, [.screenRecording])
-        XCTAssertEqual(opened.count, 1)
-        XCTAssertEqual(outcome.settingsResult?.route, .privacyDeepLink)
-        XCTAssertEqual(coordinator.journey.screenRecording, .awaitingSystemSettings)
+        XCTAssertTrue(opened.isEmpty)
+        XCTAssertNil(outcome.settingsResult)
+        XCTAssertEqual(coordinator.journey.screenRecording, .verificationFailed)
+        XCTAssertEqual(coordinator.journey.action(for: .screenRecording), .openSettings)
     }
 
     func testRepeatedPermissionActionRequestsOnlyOnce() {
@@ -127,7 +128,7 @@ final class PermissionFlowTests: XCTestCase {
 
         XCTAssertEqual(requestCount, 1)
         XCTAssertEqual(statusCount, 2)
-        XCTAssertEqual(settingsOpenCount, 2)
+        XCTAssertEqual(settingsOpenCount, 1)
         XCTAssertEqual(coordinator.journey.action(for: .screenRecording), .openSettings)
     }
 
@@ -157,8 +158,8 @@ final class PermissionFlowTests: XCTestCase {
 
         XCTAssertEqual(requested, [.accessibility])
         XCTAssertEqual(checked, [.accessibility])
-        XCTAssertEqual(opened.count, 1)
-        XCTAssertEqual(coordinator.journey.accessibility, .awaitingSystemSettings)
+        XCTAssertTrue(opened.isEmpty)
+        XCTAssertEqual(coordinator.journey.accessibility, .verificationFailed)
         XCTAssertEqual(coordinator.journey.screenRecording, .needsRequest)
     }
 

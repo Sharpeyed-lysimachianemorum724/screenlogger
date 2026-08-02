@@ -394,7 +394,7 @@ final class AppModel: ObservableObject {
     @Published var intervalSeconds: Double = 2.0 {
         didSet { persistAndApplySettings() }
     }
-    @Published var maxDimension: Int = 1920 {
+    @Published var maxDimension: Int = 2_880 {
         didSet { persistAndApplySettings() }
     }
     @Published var retentionDays: Int = 30 {
@@ -476,11 +476,13 @@ final class AppModel: ObservableObject {
     var settingsApplyTask: Task<Void, Never>?
     var recordedDomainLoadRequestID: UUID?
     var applicationDiscoveryLoadRequestID: UUID?
-    /// Display-sized preview cache (`frame id + pixel size` to still). Cap keeps memory bounded.
+    /// Full-fidelity selected previews are large on Retina and 6K displays. The
+    /// cache remains bounded while retaining enough room for the current moment
+    /// and its immediate navigation neighbors.
     let previewCache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
-        c.countLimit = 48
-        c.totalCostLimit = 40 * 1024 * 1024
+        c.countLimit = 4
+        c.totalCostLimit = 256 * 1024 * 1024
         return c
     }()
 

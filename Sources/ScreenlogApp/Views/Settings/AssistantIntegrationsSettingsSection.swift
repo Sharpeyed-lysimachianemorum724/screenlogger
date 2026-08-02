@@ -8,6 +8,7 @@ struct AssistantIntegrationsSettingsSection: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var model: AppModel
     @State private var showsOtherAssistants = false
+    @State private var showsConnectionPrivacy = false
 
     let onRemove: (AssistantIntegrationTarget) -> Void
     let onResolve: (AssistantIntegrationTarget, AssistantIntegrationInspection) -> Void
@@ -23,33 +24,33 @@ struct AssistantIntegrationsSettingsSection: View {
                 sectionHeader
                     .padding(14)
 
-                Divider().padding(.leading, 50)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                 privacyDisclosure
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
 
                 if !localAccessIsReady {
-                    Divider().padding(.leading, 50)
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                     readinessSummary
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                 }
 
-                Divider().padding(.leading, 50)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                 handoffRouting
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
 
                 if !connectedTargets.isEmpty {
-                    Divider().padding(.leading, 50)
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                     assistantRows(connectedTargets)
                 }
 
                 if !otherTargets.isEmpty {
-                    Divider().padding(.leading, 50)
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                     otherAssistantsDisclosure(otherTargets)
                 }
             }
@@ -61,7 +62,7 @@ struct AssistantIntegrationsSettingsSection: View {
         ForEach(Array(targets.enumerated()), id: \.element) { index, target in
             AssistantIntegrationRow(
                 target: target,
-                emphasizesPrimaryAction: localAccessIsReady,
+                emphasizesPrimaryAction: false,
                 onRemove: { onRemove(target) },
                 onResolve: { inspection in onResolve(target, inspection) }
             )
@@ -69,7 +70,7 @@ struct AssistantIntegrationsSettingsSection: View {
             .padding(.vertical, 7)
 
             if index < targets.count - 1 {
-                Divider().padding(.leading, 54)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
             }
         }
     }
@@ -108,18 +109,18 @@ struct AssistantIntegrationsSettingsSection: View {
     }
 
     private var privacyDisclosure: some View {
-        Label {
+        DisclosureGroup(isExpanded: $showsConnectionPrivacy) {
             Text(
-                "Installing a connection only adds files on this Mac. When you later ask an assistant to search Screenlogger, that assistant may send your request and retrieved content to its configured AI provider. Review the assistant's privacy settings before use."
+                "A connection adds files on this Mac. An assistant may send your request and retrieved content to its configured AI provider when you ask it to search Screenlogger. Review that assistant's privacy settings before use."
             )
+            .font(.caption)
+            .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-        } icon: {
-            Image(systemName: "lock.shield")
-                .foregroundStyle(.secondary)
+            .padding(.top, 8)
+        } label: {
+            Label("How assistant connections work", systemImage: "lock.shield")
+                .font(.callout.weight(.medium))
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("settings.integrations.assistant-privacy")
     }
 
@@ -189,7 +190,7 @@ struct AssistantIntegrationsSettingsSection: View {
     private var readinessDescription: String {
         localAccessIsReady
             ? "Command Setup is complete. Connect only the assistants you use on this Mac."
-            : "Complete Command Setup above before an assistant can search Screenlogger. You may install connection files now."
+            : "Complete Command Setup before an assistant can search Screenlogger. You may install connection files now."
     }
 
     private var readinessIcon: String {
@@ -342,18 +343,18 @@ private struct AssistantIntegrationRow: View {
         }
         .padding(4)
         .background(
-            rowIsFocused ? model.accentSwiftUIColor.opacity(0.08) : Color.clear,
+            rowHasFocus ? model.accentSwiftUIColor.opacity(0.08) : Color.clear,
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .overlay {
-            if rowIsFocused {
+            if rowHasFocus {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(model.accentSwiftUIColor.opacity(0.85), lineWidth: 2)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
         }
-        .focusable(rowIsFocused)
+        .focusable(focusIsRequested)
         .focused($keyboardFocused)
         .accessibilityFocused($accessibilityFocused)
         .accessibilityElement(children: .contain)
@@ -381,13 +382,21 @@ private struct AssistantIntegrationRow: View {
         "settings.integration.\(target.rawValue)"
     }
 
-    private var rowIsFocused: Bool {
+    private var focusIsRequested: Bool {
         focusRequest?.focusedElementIdentifier == rowIdentifier
     }
 
+    private var rowHasFocus: Bool {
+        keyboardFocused || accessibilityFocused
+    }
+
     private func focusIfRequested() {
-        guard rowIsFocused else { return }
-        DispatchQueue.main.async {
+        guard focusIsRequested else { return }
+        Task { @MainActor in
+            // The row may enter the hierarchy in the same update that changes
+            // the pane. Let AppKit register the focus destination first.
+            await Task.yield()
+            await Task.yield()
             keyboardFocused = true
             accessibilityFocused = true
         }
@@ -449,7 +458,7 @@ private struct AssistantIntegrationRow: View {
                 .foregroundStyle(.secondary)
             } else if snapshot.actionNotice?.severity == .failure {
                 Label("Action failed", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(SLDesign.error)
             } else if snapshot.inspection == nil {
                 Label("Unavailable", systemImage: "exclamationmark.circle.fill")
                     .foregroundStyle(SLDesign.warning)

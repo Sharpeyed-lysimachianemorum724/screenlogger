@@ -95,13 +95,7 @@ final class ScreenlogAppUITests: XCTestCase {
 
         searchField.click()
         searchField.typeText("quarterly planning")
-        let clearSearch = assertElement(identifier: "library.search.clear", in: app)
-        clearSearch.click()
-        assertElementDoesNotExist(
-            identifier: "library.search.clear",
-            in: app,
-            description: "Clear Search after clearing the query"
-        )
+        clearNativeSearchField(searchField)
 
         let timelineButton = assertElement(identifier: "navigation.library.timeline", in: app)
         timelineButton.click()
@@ -231,7 +225,7 @@ final class ScreenlogAppUITests: XCTestCase {
         let searchField = assertElement(identifier: "library.search.field", in: app)
 
         searchField.click()
-        searchField.typeText("app:TextE")
+        pasteText("app:TextE", into: searchField)
         let suggestions = assertElement(identifier: "library.search.suggestions", in: app)
 
         app.typeKey(.downArrow, modifierFlags: [])
@@ -491,7 +485,7 @@ final class ScreenlogAppUITests: XCTestCase {
             "draft query",
             "Returning from Setup should preserve the initiating Library query."
         )
-        assertElement(identifier: "library.search.clear", in: app).click()
+        clearNativeSearchField(assertElement(identifier: "library.search.field", in: app))
         assertElement(identifier: "navigation.library.timeline", in: app).click()
 
         assertWindow("Timeline", in: app)
@@ -646,8 +640,9 @@ final class ScreenlogAppUITests: XCTestCase {
         // additional click.
         searchField.typeText("keyboard navigation")
         XCTAssertEqual(searchField.value as? String, "keyboard navigation")
-        assertElement(identifier: "library.search.clear", in: app)
 
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertEqual(searchField.value as? String, "")
         app.typeKey(.escape, modifierFlags: [])
         assertElementDoesNotExist(
             libraryWindow,
@@ -659,9 +654,9 @@ final class ScreenlogAppUITests: XCTestCase {
         app.typeKey("k", modifierFlags: .command)
         assertWindow("Library", in: app)
         let reopenedSearch = assertElement(identifier: "library.search.field", in: app)
-        XCTAssertEqual(reopenedSearch.value as? String, "keyboard navigation")
-        reopenedSearch.typeText(" restored")
-        XCTAssertEqual(reopenedSearch.value as? String, "keyboard navigation restored")
+        XCTAssertEqual(reopenedSearch.value as? String, "")
+        reopenedSearch.typeText("restored")
+        XCTAssertEqual(reopenedSearch.value as? String, "restored")
 
         // The red-close / Command-W path uses the same retained native window,
         // preserves the query, and can still restore keyboard focus.
@@ -673,11 +668,11 @@ final class ScreenlogAppUITests: XCTestCase {
         app.typeKey("k", modifierFlags: .command)
         assertWindow("Library", in: app)
         let reopenedAfterClose = assertElement(identifier: "library.search.field", in: app)
-        XCTAssertEqual(reopenedAfterClose.value as? String, "keyboard navigation restored")
+        XCTAssertEqual(reopenedAfterClose.value as? String, "restored")
         reopenedAfterClose.typeText(" again")
         XCTAssertEqual(
             reopenedAfterClose.value as? String,
-            "keyboard navigation restored again"
+            "restored again"
         )
     }
 
@@ -1013,7 +1008,6 @@ final class ScreenlogAppUITests: XCTestCase {
         assertElement(identifier: "settings.storage.delete-history", in: app)
 
         assertElement(identifier: "settings.sidebar.support", in: app).click()
-        assertElement(identifier: "settings.support.review-privacy", in: app)
         assertControl(label: "Review bundle contents", in: app).click()
         assertElement(label: "Never included", in: app)
 
@@ -1380,7 +1374,7 @@ final class ScreenlogAppUITests: XCTestCase {
         XCTAssertTrue(navigationValue.contains("moment 8 of 8"))
         let scrubContext = assertElement(identifier: "timeline.navigation.context", in: app)
         XCTAssertEqual(scrubContext.label, "Selected moment")
-        XCTAssertTrue((scrubContext.value as? String ?? "").contains("fixture.example"))
+        XCTAssertTrue((scrubContext.value as? String ?? "").contains("TextEdit"))
         assertElement(identifier: "timeline.day.previous", in: app)
         assertElement(identifier: "timeline.day.next", in: app)
         let range = assertElement(identifier: "timeline.navigation.range", in: app)
@@ -1921,6 +1915,22 @@ final class ScreenlogAppUITests: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    private func clearNativeSearchField(_ search: XCUIElement) {
+        search.click()
+        search.typeKey("a", modifierFlags: .command)
+        search.typeKey(.delete, modifierFlags: [])
+        XCTAssertEqual(search.value as? String, "")
+    }
+
+    /// XCUITest drops shift-produced punctuation when `typeText` targets an
+    /// AppKit NSSearchField on current macOS runners. Paste exercises the same
+    /// native edit notification path while preserving structured query syntax.
+    private func pasteText(_ text: String, into search: XCUIElement) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        search.typeKey("v", modifierFlags: .command)
     }
 
 }

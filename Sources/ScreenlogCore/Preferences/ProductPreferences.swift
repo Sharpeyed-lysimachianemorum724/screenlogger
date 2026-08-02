@@ -283,6 +283,60 @@ public struct StorageMaintenancePlan: Equatable, Sendable {
 
 // MARK: - Snapshot / capture quality prefs keys
 
+/// Product-level capture fidelity. Ultra uses the zero maximum-dimension
+/// sentinel so ScreenCaptureKit receives the display's native backing size.
+public enum CaptureQualityPreset: Int, CaseIterable, Identifiable, Hashable, Sendable {
+    case standard
+    case high
+    case ultra
+
+    public static let nativeResolutionMaxDimension = 0
+
+    public var id: Int { rawValue }
+
+    public var maxDimension: Int {
+        switch self {
+        case .standard: return 1_920
+        case .high: return 2_880
+        case .ultra: return Self.nativeResolutionMaxDimension
+        }
+    }
+
+    public var stillCompressionQuality: Double {
+        switch self {
+        case .standard: return 0.88
+        case .high: return 0.94
+        case .ultra: return 0.99
+        }
+    }
+
+    public var label: String {
+        switch self {
+        case .standard: return "Standard"
+        case .high: return "High"
+        case .ultra: return "Ultra"
+        }
+    }
+
+    public static func from(maxDimension: Int) -> CaptureQualityPreset {
+        if maxDimension == nativeResolutionMaxDimension { return .ultra }
+        if maxDimension <= CaptureQualityPreset.standard.maxDimension { return .standard }
+        if maxDimension <= CaptureQualityPreset.high.maxDimension { return .high }
+        return .ultra
+    }
+
+    /// Converts the three pre-release 720/1080/1440 values to the fidelity they
+    /// represented in the UI. New values do not overlap those legacy sentinels.
+    public static func migratedMaxDimension(_ storedValue: Int) -> Int {
+        switch storedValue {
+        case 720: return CaptureQualityPreset.standard.maxDimension
+        case 1_080: return CaptureQualityPreset.high.maxDimension
+        case 1_440: return CaptureQualityPreset.ultra.maxDimension
+        default: return storedValue
+        }
+    }
+}
+
 extension ProductPreferenceKey {
     /// `heic` (default) or `jpeg` preferred still encoding.
     public static let stillEncoding = "screenlog.stillEncoding"
@@ -328,7 +382,7 @@ public enum CapturePreferenceStore {
 
         public init(
             intervalSeconds: Double = 2.0,
-            maxDimension: Int = 1920,
+            maxDimension: Int = 2_880,
             retentionDays: Int = 30,
             storageCapMB: Int64 = 50_000,
             storageMode: StorageManagementMode = .limit,
@@ -367,7 +421,9 @@ public enum CapturePreferenceStore {
             s.intervalSeconds = max(0.5, defaults.double(forKey: intervalSeconds))
         }
         if defaults.object(forKey: maxDimension) != nil {
-            s.maxDimension = max(480, defaults.integer(forKey: maxDimension))
+            let storedValue = defaults.integer(forKey: maxDimension)
+            let migratedValue = CaptureQualityPreset.migratedMaxDimension(storedValue)
+            s.maxDimension = migratedValue == 0 ? 0 : max(480, migratedValue)
         }
         if defaults.object(forKey: retentionDays) != nil {
             s.retentionDays = max(1, defaults.integer(forKey: retentionDays))

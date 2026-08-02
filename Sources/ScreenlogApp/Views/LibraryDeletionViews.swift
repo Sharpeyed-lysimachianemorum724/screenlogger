@@ -69,7 +69,7 @@ struct LibraryDeletionReviewSheet: View {
                     "Some selected moments share a compressed video. Deleting it also removes \(neighborCount) neighboring \(neighborCount == 1 ? "moment" : "moments").",
                     systemImage: "exclamationmark.triangle.fill"
                 )
-                .foregroundStyle(.orange)
+                .foregroundStyle(SLDesign.warning)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("library.deletion.review.shared-video-warning")

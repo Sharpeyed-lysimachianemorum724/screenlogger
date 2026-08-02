@@ -354,6 +354,97 @@ final class VisualAuditUITests: XCTestCase {
         capture(settings, named: "ui-audit-settings-exclusions-websites-minimum-dark")
     }
 
+    func testVisualAuditAppearanceIncreasedContrastOrange() throws {
+        let app = try launch(
+            route: "--open-library",
+            snapshotSurface: .settings,
+            settingsDestination: "appearance",
+            appearance: "light",
+            accent: "orange",
+            increasedContrast: true
+        )
+        let settings = assertWindow("Settings", in: app)
+        assertElement("settings.pane.appearance.heading", in: app)
+        assertElement("settings.appearance.accent", in: app)
+        capture(
+            settings,
+            named: "ui-audit-settings-appearance-increased-contrast-orange"
+        )
+    }
+
+    /// A deliberately short, deterministic product tour intended for screen
+    /// recording. It is opt-in so the pauses never slow the ordinary UI suite.
+    func testRecordProductTour() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["SCREENLOGGER_RECORD_DEMO"] == "1"
+                || FileManager.default.fileExists(
+                    atPath: "/tmp/screenlogger-record-product-tour"
+                ),
+            "Run explicitly while recording the product tour."
+        )
+
+        let app = try launch(
+            route: "--open-library",
+            assistantReady: ["claude", "codex", "grok"]
+        )
+        assertWindow("Library", in: app)
+        demoPause(0.8)
+
+        let search = assertElement("library.search.field", in: app)
+        search.click()
+        search.typeKey("a", modifierFlags: .command)
+        search.typeKey(.delete, modifierFlags: [])
+        search.typeText("navigation")
+        XCTAssertEqual(search.value as? String, "navigation")
+        assertElement("library.result.6", in: app)
+        demoPause(0.8)
+
+        let secondResult = assertElement("library.result.5", in: app)
+        secondResult.click()
+        assertElement("library.result.inspector.selection.5", in: app)
+        demoPause(0.6)
+
+        assertElement("library.result.inspector.open", in: app).click()
+        assertWindow("Timeline", in: app)
+        assertElement("timeline.moment", in: app)
+        demoPause(0.9)
+
+        assertElement("timeline.segment.previous", in: app).click()
+        demoPause(0.5)
+        assertElement("timeline.segment.next", in: app).click()
+        demoPause(0.5)
+
+        let playback = assertElement("timeline.playback.toggle", in: app)
+        playback.click()
+        demoPause(1.0)
+        playback.click()
+        demoPause(0.4)
+
+        assertElement("navigation.timeline.settings", in: app).click()
+        let settings = assertWindow("Settings", in: app)
+        demoPause(0.7)
+
+        for pane in [
+            "settings.sidebar.capture",
+            "settings.sidebar.privacy",
+            "settings.sidebar.exclusions",
+            "settings.sidebar.integrations",
+        ] {
+            assertElement(pane, in: app).click()
+            XCTAssertTrue(settings.exists)
+            demoPause(pane == "settings.sidebar.integrations" ? 1.0 : 0.7)
+        }
+
+        app.typeKey("1", modifierFlags: .command)
+        assertWindow("Library", in: app)
+        search.click()
+        search.typeKey("a", modifierFlags: .command)
+        search.typeText("Find the design review I was reading")
+        app.typeKey(.return, modifierFlags: .command)
+        assertElement("library.assistant.sheet", in: app)
+        demoPause(1.2)
+    }
+
     func testVisualAuditAssistantConnectionRecoveryDefaultLight() throws {
         let app = try launch(
             route: "--open-library",
@@ -393,6 +484,8 @@ final class VisualAuditUITests: XCTestCase {
         settingsDestination: String? = nil,
         windowSize: WindowSize = .default,
         appearance: String = "light",
+        accent: String? = nil,
+        increasedContrast: Bool = false,
         captureIssue: Bool = false,
         unreadablePreview: Bool = false,
         missingPermission: Bool = false,
@@ -420,6 +513,12 @@ final class VisualAuditUITests: XCTestCase {
         application.launchEnvironment["SCREENLOG_UI_TEST_FIXTURE"] =
             "deterministic-navigation-v1"
         application.launchEnvironment["SCREENLOG_UI_TEST_APPEARANCE"] = appearance
+        if let accent {
+            application.launchEnvironment["SCREENLOG_UI_TEST_ACCENT"] = accent
+        }
+        if increasedContrast {
+            application.launchEnvironment["SCREENLOG_UI_TEST_INCREASED_CONTRAST"] = "1"
+        }
         application.launchEnvironment["SCREENLOG_UI_TEST_LOGIN_ITEM_ISSUE"] =
             "registration-failed"
         application.launchEnvironment["SCREENLOG_UI_TEST_READY_ASSISTANTS"] =
@@ -452,11 +551,15 @@ final class VisualAuditUITests: XCTestCase {
         }
 
         application.launch()
+        // Screenlogger normally runs as an accessory app. Xcode can leave the
+        // test runner active even after the product has ordered its key window,
+        // so explicitly request activation before querying its named window.
+        application.activate()
         app = application
-        XCTAssertTrue(
-            application.wait(for: .runningForeground, timeout: Self.readinessTimeout),
-            "Screenlogger did not become foreground after launching with \(route)."
-        )
+        let running =
+            application.wait(for: .runningForeground, timeout: 2)
+            || application.wait(for: .runningBackground, timeout: Self.readinessTimeout - 2)
+        XCTAssertTrue(running, "Screenlogger did not remain running after launching with \(route).")
         try waitForFixture(in: directory)
         return application
     }
@@ -483,7 +586,7 @@ final class VisualAuditUITests: XCTestCase {
 
     private func assertMissingScreenRecordingStep(in app: XCUIApplication) {
         let permissionStep = assertElement("setup.progress.permission", in: app)
-        XCTAssertEqual(permissionStep.label, "Allow Screen Recording")
+        XCTAssertEqual(permissionStep.label, "Screen Recording")
         XCTAssertEqual(permissionStep.value as? String, "Current step")
         assertElement("setup.next-action", in: app)
     }
@@ -535,6 +638,10 @@ final class VisualAuditUITests: XCTestCase {
         // Keep edge-activated Dock chrome and hover treatments out of the
         // bounded product screenshot without synthesizing a click.
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+    }
+
+    private func demoPause(_ seconds: TimeInterval) {
+        RunLoop.current.run(until: Date().addingTimeInterval(seconds))
     }
 
     /// Records navigation time as audit evidence while correctness is guarded

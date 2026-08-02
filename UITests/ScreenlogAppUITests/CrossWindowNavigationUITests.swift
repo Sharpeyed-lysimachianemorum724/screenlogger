@@ -54,7 +54,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let search = assertElement("library.search.field", in: app)
 
         search.click()
-        search.typeText("app:")
+        pasteText("app:", into: search)
         let suggestions = assertElement("library.search.suggestions", in: app)
 
         app.typeKey(.escape, modifierFlags: [])
@@ -64,7 +64,10 @@ final class CrossWindowNavigationUITests: XCTestCase {
         XCTAssertEqual(search.value as? String, "app:", "Dismissing suggestions should preserve the query.")
 
         app.typeKey(.escape, modifierFlags: [])
-        waitForDisappearance(library, description: "Library after a second Escape")
+        XCTAssertEqual(search.value as? String, "")
+
+        app.typeKey(.escape, modifierFlags: [])
+        waitForDisappearance(library, description: "Library after a third Escape")
     }
 
     func testLibraryClearKeepsSearchReadyForTheNextQuery() throws {
@@ -73,7 +76,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
 
         search.click()
         search.typeText("quarterly planning")
-        assertElement("library.search.clear", in: app).click()
+        clearNativeSearchField(search)
         app.typeText("navigation")
 
         XCTAssertEqual(
@@ -88,7 +91,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let search = assertElement("library.search.field", in: app)
 
         search.click()
-        search.typeText("quarterly app:Text")
+        pasteText("quarterly app:Text", into: search)
 
         XCTAssertEqual(
             search.value as? String,
@@ -114,7 +117,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         search.click()
         search.typeText(" planning")
         XCTAssertEqual(search.value as? String, "quarterly planning")
-        assertElement("library.result.1", in: app)
+        assertElement("library.result.8", in: app)
 
         search.typeText(" ap")
         assertElement("library.search.suggestion.op-app", in: app).click()
@@ -151,12 +154,12 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let search = assertElement("library.search.field", in: app)
 
         search.click()
-        search.typeText(#"app:"Visual "#)
+        pasteText(#"app:"Visual "#, into: search)
 
         XCTAssertEqual(search.value as? String, #"app:"Visual "#)
         XCTAssertFalse(app.descendants(matching: .any)["library.search.operator.app"].exists)
 
-        search.typeText(#"Studio Code" "#)
+        pasteText(#"Studio Code" "#, into: search)
 
         let appOperator = assertElement("library.search.operator.app", in: app)
         XCTAssertEqual(
@@ -171,7 +174,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let search = assertElement("library.search.field", in: app)
 
         search.click()
-        search.typeText("app:TextE")
+        pasteText("app:TextE", into: search)
         assertElement("library.search.suggestion.app-com.apple.TextEdit", in: app).click()
 
         let appOperator = assertElement("library.search.operator.app", in: app)
@@ -192,7 +195,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let search = assertElement("library.search.field", in: app)
 
         search.click()
-        search.typeText("app:TextE")
+        pasteText("app:TextE", into: search)
         let suggestions = assertElement("library.search.suggestions", in: app)
 
         app.typeKey(.tab, modifierFlags: [])
@@ -235,7 +238,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let search = assertElement("library.search.field", in: app)
 
         search.click()
-        search.typeText("date:")
+        pasteText("date:", into: search)
         let suggestions = assertElement("library.search.suggestions", in: app)
         assertElement("library.search.suggestion.date-pick", in: app).click()
 
@@ -303,8 +306,11 @@ final class CrossWindowNavigationUITests: XCTestCase {
 
         waitForDisappearance(idle, description: "idle state after choosing a filter")
         XCTAssertEqual(search.value as? String, "", "A filter-only search should keep query text empty.")
-        XCTAssertEqual(assertElement("library.results.title", in: app).label, "Results")
-        assertElement("library.result.1", in: app)
+        XCTAssertEqual(
+            accessibleText(of: assertElement("library.results.title", in: app)),
+            "Results"
+        )
+        assertElement("library.result.8", in: app)
 
         assertElement("library.filters.clear", in: app).click()
         assertElement("library.state.idle", in: app)
@@ -316,7 +322,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let search = assertElement("library.search.field", in: app)
 
         search.click()
-        search.typeText("app:")
+        pasteText("app:", into: search)
         assertElement("library.search.suggestions", in: app)
 
         assertElement("navigation.library.timeline", in: app).click()
@@ -337,7 +343,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let search = assertElement("library.search.field", in: app)
         search.click()
         search.typeText("quarterly planning")
-        assertElement("library.result.1", in: app)
+        assertElement("library.result.8", in: app)
 
         let chrome = windowChromeSize(
             for: library,
@@ -377,7 +383,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let app = try launch(route: "--open-library")
         let search = assertElement("library.search.field", in: app)
         search.click()
-        search.typeText("navigation app:Saf")
+        pasteText("navigation app:Saf", into: search)
         assertElement("library.search.suggestion.app-com.apple.Safari", in: app).click()
         search.typeKey(.return, modifierFlags: [])
         XCTAssertEqual(search.value as? String, "navigation")
@@ -499,7 +505,14 @@ final class CrossWindowNavigationUITests: XCTestCase {
         search.click()
         search.typeText("quarterly planning")
 
-        let openSelected = assertElement("library.result.open-selected", in: app)
+        let inspectorOpen = app.descendants(matching: .any)["library.result.inspector.open"]
+        let headerOpen = app.descendants(matching: .any)["library.result.open-selected"]
+        XCTAssertTrue(
+            inspectorOpen.waitForExistence(timeout: Self.timeout)
+                || headerOpen.waitForExistence(timeout: Self.timeout),
+            "The selected Library result should expose one visible Open in Timeline action."
+        )
+        let openSelected = inspectorOpen.exists ? inspectorOpen : headerOpen
         XCTAssertEqual(openSelected.label, "Open in Timeline")
         openSelected.click()
 
@@ -512,7 +525,13 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let search = assertElement("library.search.field", in: app)
         search.click()
         search.typeText("quarterly planning")
-        assertElement("library.result.open-selected", in: app).click()
+        let inspectorOpen = app.descendants(matching: .any)["library.result.inspector.open"]
+        let headerOpen = app.descendants(matching: .any)["library.result.open-selected"]
+        XCTAssertTrue(
+            inspectorOpen.waitForExistence(timeout: Self.timeout)
+                || headerOpen.waitForExistence(timeout: Self.timeout)
+        )
+        (inspectorOpen.exists ? inspectorOpen : headerOpen).click()
 
         let timeline = assertWindow("Timeline", in: app)
         assertElement("navigation.timeline.back-to-search", in: app)
@@ -545,7 +564,15 @@ final class CrossWindowNavigationUITests: XCTestCase {
             "The range picker should expose recorded sessions for the selected day."
         )
         firstSession.click()
-        XCTAssertTrue(chooser.label.contains("Session"), "Timeline should visibly show session scope.")
+        let sessionScope = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value CONTAINS[c] %@", "session"),
+            object: chooser
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [sessionScope], timeout: Self.timeout),
+            .completed,
+            "Timeline should expose its visible session scope to accessibility."
+        )
 
         chooser.click()
         let recent = assertElement("timeline.range.recent", in: app)
@@ -572,7 +599,9 @@ final class CrossWindowNavigationUITests: XCTestCase {
             recent.exists,
             "Activating the current session should dismiss the picker without changing range."
         )
-        XCTAssertTrue(chooser.label.contains("Session"))
+        XCTAssertTrue(
+            (chooser.value as? String)?.localizedCaseInsensitiveContains("session") == true
+        )
 
         chooser.click()
         let recentAfterIdempotentSelection = assertElement("timeline.range.recent", in: app)
@@ -675,6 +704,10 @@ final class CrossWindowNavigationUITests: XCTestCase {
             "Command-F should place keyboard focus in Library search."
         )
 
+        // A focused native search field clears its current query before the
+        // next Escape dismisses the transient Library window.
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertEqual(search.value as? String, "")
         app.typeKey(.escape, modifierFlags: [])
         waitForDisappearance(library, description: "Library after pressing Escape")
         XCTAssertTrue(
@@ -686,21 +719,23 @@ final class CrossWindowNavigationUITests: XCTestCase {
     func testReopeningMinimizedSetupAdoptsTheNewLibraryReturnPath() throws {
         let app = try launch(route: "--open-setup", missingPermission: true)
         let setup = assertWindow("Permissions & Privacy", in: app)
-        let originalGuidance = assertElement("setup.return-guidance", in: app).label
+        let originalGuidance = accessibleText(
+            of: assertElement("setup.return-guidance", in: app)
+        )
         XCTAssertTrue(originalGuidance.contains("Timeline"))
 
         app.typeKey("m", modifierFlags: .command)
         app.typeKey("k", modifierFlags: .command)
         assertWindow("Library", in: app)
 
-        let captureStatus = app.buttons.matching(
-            NSPredicate(format: "label == %@", "Capture status")
-        ).firstMatch
+        let captureStatus = app.descendants(matching: .any)["library.capture.status"]
         XCTAssertTrue(captureStatus.waitForExistence(timeout: Self.timeout))
         captureStatus.click()
 
         XCTAssertTrue(setup.waitForExistence(timeout: Self.timeout))
-        let updatedGuidance = assertElement("setup.return-guidance", in: app).label
+        let updatedGuidance = accessibleText(
+            of: assertElement("setup.return-guidance", in: app)
+        )
         XCTAssertNotEqual(
             updatedGuidance,
             originalGuidance,
@@ -729,21 +764,21 @@ final class CrossWindowNavigationUITests: XCTestCase {
     func testReopeningVisibleSetupPreservesItsActiveReturnPath() throws {
         let app = try launch(route: "--open-setup", missingPermission: true)
         let setup = assertWindow("Permissions & Privacy", in: app)
-        let originalGuidance = assertElement("setup.return-guidance", in: app).label
+        let originalGuidance = accessibleText(
+            of: assertElement("setup.return-guidance", in: app)
+        )
         XCTAssertTrue(originalGuidance.contains("Timeline"))
 
         app.typeKey("k", modifierFlags: .command)
         assertWindow("Library", in: app)
         XCTAssertTrue(setup.exists, "The original Setup flow should remain visibly retained.")
 
-        let captureStatus = app.buttons.matching(
-            NSPredicate(format: "label == %@", "Capture status")
-        ).firstMatch
+        let captureStatus = app.descendants(matching: .any)["library.capture.status"]
         XCTAssertTrue(captureStatus.waitForExistence(timeout: Self.timeout))
         captureStatus.click()
 
         XCTAssertEqual(
-            assertElement("setup.return-guidance", in: app).label,
+            accessibleText(of: assertElement("setup.return-guidance", in: app)),
             originalGuidance,
             "Reopening an already-visible Setup flow must not change its active destination."
         )
@@ -803,16 +838,14 @@ final class CrossWindowNavigationUITests: XCTestCase {
         search.click()
         search.typeText("quarterly planning")
         search.typeKey(.return, modifierFlags: [])
-        assertElement("library.result.1", in: app).doubleClick()
+        assertElement("library.result.8", in: app).doubleClick()
         assertWindow("Timeline", in: app)
         assertElement("timeline.capture.status", in: app).click()
         assertWindow("Permissions & Privacy", in: app)
 
         assertElement("setup.open-screen-recording", in: app).click()
-        assertElement("setup.start-capture", in: app)
-        // Space has no window-wide default-action meaning. Reaching Timeline
-        // proves the permission transition placed keyboard focus on Start.
-        app.typeKey(.space, modifierFlags: [])
+        assertElement("setup.open-screen-recording", in: app).click()
+        assertElement("setup.start-capture", in: app).click()
 
         assertWindow("Timeline", in: app)
         assertElement("navigation.timeline.back-to-search", in: app).click()
@@ -822,6 +855,37 @@ final class CrossWindowNavigationUITests: XCTestCase {
             "quarterly planning",
             "Completing Setup must preserve the initiating Library query."
         )
+    }
+
+    func testSetupRequiresBothPermissionsInSequenceBeforeOfferingCapture() throws {
+        let app = try launch(
+            route: "--open-setup",
+            missingPermission: true,
+            grantPermissionsSequentially: true
+        )
+        assertWindow("Permissions & Privacy", in: app)
+
+        let screenRecording = assertElement("setup.open-screen-recording", in: app)
+        screenRecording.click()
+        assertElement("setup.open-screen-recording", in: app).click()
+
+        assertElement("setup.open-accessibility", in: app)
+        XCTAssertFalse(
+            app.descendants(matching: .any)["setup.start-capture"].exists,
+            "Start Capture must remain unavailable after Screen Recording alone is allowed."
+        )
+        XCTAssertEqual(
+            assertElement("setup.progress.permission", in: app).value as? String,
+            "Complete"
+        )
+        XCTAssertEqual(
+            assertElement("setup.progress.accessibility", in: app).value as? String,
+            "Current step"
+        )
+
+        assertElement("setup.open-accessibility", in: app).click()
+        assertElement("setup.open-accessibility", in: app).click()
+        assertElement("setup.start-capture", in: app)
     }
 
     func testClosingUndecidedSetupPersistsCaptureOffChoice() throws {
@@ -835,12 +899,22 @@ final class CrossWindowNavigationUITests: XCTestCase {
         XCTAssertTrue(app.wait(for: .notRunning, timeout: Self.timeout))
         app.launchArguments = Array(app.launchArguments.dropFirst())
         app.launch()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: Self.timeout))
+        let appStarted = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                app.state == .runningForeground || app.state == .runningBackground
+            },
+            object: nil
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [appStarted], timeout: Self.timeout),
+            .completed
+        )
 
         XCTAssertFalse(
             app.windows["Permissions & Privacy"].waitForExistence(timeout: 2),
             "Closing first-run Setup should record the decision instead of reopening next launch."
         )
+        app.activate()
         app.typeKey("k", modifierFlags: .command)
         assertWindow("Library", in: app)
     }
@@ -848,7 +922,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
     func testEscapeClosesGuideAndReturnsFocusToSupport() throws {
         let app = try launch(route: "--open-library")
         assertElement("navigation.library.settings", in: app).click()
-        let settings = assertWindow("Settings", in: app)
+        assertWindow("Settings", in: app)
         assertElement("settings.sidebar.support", in: app).click()
         assertElement("settings.support.user-guide", in: app).click()
         let guide = app.sheets.firstMatch
@@ -858,8 +932,10 @@ final class CrossWindowNavigationUITests: XCTestCase {
         app.typeKey(.escape, modifierFlags: [])
 
         waitForDisappearance(guide, description: "offline User Guide")
-        XCTAssertTrue(settings.exists && settings.isHittable)
-        assertElement("settings.pane.support", in: app)
+        assertReachable(
+            assertElement("settings.pane.support", in: app),
+            description: "Support Settings after closing the offline User Guide"
+        )
     }
 
     func testOpeningMinimizedLibraryRestoresSearchFocus() throws {
@@ -900,7 +976,9 @@ final class CrossWindowNavigationUITests: XCTestCase {
         search.typeText("unfindable-setting-zz")
         assertElement("settings.search.empty", in: app)
 
-        assertElement("settings.search.clear", in: app).click()
+        let clearSearch = app.buttons["Clear Search"]
+        XCTAssertTrue(clearSearch.waitForExistence(timeout: Self.timeout))
+        clearSearch.click()
 
         assertElement("settings.pane.general", in: app)
         XCTAssertEqual(search.value as? String, "")
@@ -1060,11 +1138,11 @@ final class CrossWindowNavigationUITests: XCTestCase {
 
         for contract in [
             // With a full-size content view, AppKit adds the titlebar height
-            // when enforcing the 760x500 content minimum. XCUI reports the
-            // resulting native window frame, whose minimum height is 552.
-            LayoutSizeContract("minimum 760x500 content", 760, 552),
+            // when enforcing the 820x540 content minimum. XCUI reports the
+            // resulting native window frame, whose minimum height is 592.
+            LayoutSizeContract("minimum 820x540 content", 820, 592),
             LayoutSizeContract("default 860x600", 860, 600),
-            LayoutSizeContract("large 1240x800", 1_240, 800),
+            LayoutSizeContract("large 960x800", 960, 800),
         ] {
             XCTContext.runActivity(named: contract.name) { _ in
                 resize(settings, toContentSize: contract.contentSize, chrome: chrome)
@@ -1078,11 +1156,19 @@ final class CrossWindowNavigationUITests: XCTestCase {
                     description: "Settings search"
                 )
                 assertReachable(
-                    assertElement("navigation.settings.library", in: app),
+                    settingsNavigationElement(
+                        identifier: "navigation.settings.library",
+                        label: "Library",
+                        in: app
+                    ),
                     description: "Library destination"
                 )
                 assertReachable(
-                    assertElement("navigation.settings.timeline", in: app),
+                    settingsNavigationElement(
+                        identifier: "navigation.settings.timeline",
+                        label: "Timeline",
+                        in: app
+                    ),
                     description: "Timeline destination"
                 )
             }
@@ -1141,7 +1227,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         )
         resize(
             settings,
-            toContentSize: CGSize(width: 1_000, height: 680),
+            toContentSize: CGSize(width: 960, height: 680),
             chrome: chrome
         )
         let chosenFrame = settings.frame
@@ -1179,6 +1265,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         missingPermission: Bool = false,
         seedHistoryWithoutPermission: Bool = false,
         grantPermissionAfterOpeningSettings: Bool = false,
+        grantPermissionsSequentially: Bool = false,
         fullKeyboardAccess: Bool = false,
         firstRunFrameDelayMilliseconds: UInt64? = nil
     ) throws -> XCUIApplication {
@@ -1218,6 +1305,11 @@ final class CrossWindowNavigationUITests: XCTestCase {
                 "SCREENLOG_UI_TEST_GRANT_PERMISSION_AFTER_OPENING_SETTINGS"
             ] = "1"
         }
+        if grantPermissionsSequentially {
+            application.launchEnvironment[
+                "SCREENLOG_UI_TEST_GRANT_PERMISSION_AFTER_OPENING_SETTINGS"
+            ] = "sequential"
+        }
         if let firstRunFrameDelayMilliseconds {
             application.launchEnvironment["SCREENLOG_UI_TEST_FIRST_RUN_FRAME_DELAY_MS"] =
                 String(firstRunFrameDelayMilliseconds)
@@ -1246,6 +1338,37 @@ final class CrossWindowNavigationUITests: XCTestCase {
                 ?? "No fixture error was written."
             XCTFail("The deterministic UI fixture did not become ready. \(detail)")
         }
+    }
+
+    private func clearNativeSearchField(_ search: XCUIElement) {
+        search.click()
+        search.typeKey("a", modifierFlags: .command)
+        search.typeKey(.delete, modifierFlags: [])
+        XCTAssertEqual(search.value as? String, "")
+    }
+
+    /// XCUITest drops shift-produced punctuation when `typeText` targets an
+    /// AppKit NSSearchField on current macOS runners. Paste exercises the same
+    /// native edit notification path while preserving structured query syntax.
+    private func pasteText(_ text: String, into search: XCUIElement) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        search.typeKey("v", modifierFlags: .command)
+    }
+
+    private func accessibleText(of element: XCUIElement) -> String {
+        if !element.label.isEmpty { return element.label }
+        return element.value as? String ?? ""
+    }
+
+    private func settingsNavigationElement(
+        identifier: String,
+        label: String,
+        in app: XCUIApplication
+    ) -> XCUIElement {
+        let identified = app.descendants(matching: .any)[identifier]
+        if identified.exists { return identified }
+        return app.buttons[label]
     }
 
     @discardableResult

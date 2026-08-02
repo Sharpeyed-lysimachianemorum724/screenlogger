@@ -3,6 +3,34 @@ import XCTest
 @testable import ScreenlogCore
 
 final class CaptureOnceFailureTests: XCTestCase {
+    func testCaptureResolutionPolicyPreservesNativePixelsForUltra() {
+        let size = ScreenCaptureService.outputSize(
+            nativeWidth: 6_016,
+            nativeHeight: 3_384,
+            maxDimension: 0
+        )
+        XCTAssertEqual(size.width, 6_016)
+        XCTAssertEqual(size.height, 3_384)
+    }
+
+    func testCaptureResolutionPolicyDownscalesWithoutUpscaling() {
+        let downscaled = ScreenCaptureService.outputSize(
+            nativeWidth: 3_456,
+            nativeHeight: 2_234,
+            maxDimension: 2_880
+        )
+        XCTAssertEqual(downscaled.width, 2_880)
+        XCTAssertEqual(downscaled.height, 1_862)
+
+        let unchanged = ScreenCaptureService.outputSize(
+            nativeWidth: 1_280,
+            nativeHeight: 800,
+            maxDimension: 1_920
+        )
+        XCTAssertEqual(unchanged.width, 1_280)
+        XCTAssertEqual(unchanged.height, 800)
+    }
+
     func testOperationalFailuresCarryOnlyStablePrivacySafeCopy() {
         let rawDetail = "/Users/person/Secret Project/private-frame.heic: encoding failed"
         let error = NSError(

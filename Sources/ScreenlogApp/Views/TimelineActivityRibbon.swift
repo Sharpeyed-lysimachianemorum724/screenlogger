@@ -34,13 +34,14 @@ extension HistoryPane {
                             Text(SLTimeFormat.shortTime(contextFrame.timestampMs))
                                 .fontWeight(.semibold)
                                 .monospacedDigit()
-                            Text(" | ")
-                                .foregroundStyle(.white.opacity(secondaryTextOpacity))
+                            Divider()
+                                .frame(height: 10)
+                                .overlay(.white.opacity(secondaryTextOpacity))
                                 .accessibilityHidden(true)
                             Text(contextFrame.appLabel)
                                 .lineLimit(1)
                             if let domain = contextFrame.domain, !domain.isEmpty {
-                                Text(" |  \(domain)")
+                                Text(domain)
                                     .lineLimit(1)
                                     .foregroundStyle(.white.opacity(secondaryTextOpacity))
                             }
@@ -384,7 +385,7 @@ extension HistoryPane {
     }
 
     private static func intervalHelp(_ interval: TimelineActivityPresentation.Interval) -> String {
-        "\(interval.source.appLabel)  |  \(interval.momentCount) captured moment\(interval.momentCount == 1 ? "" : "s")"
+        "\(interval.source.appLabel), \(interval.momentCount) captured moment\(interval.momentCount == 1 ? "" : "s")"
     }
 
     private static func intervalAccessibilityValue(
@@ -395,7 +396,7 @@ extension HistoryPane {
     }
 
     private static func gapHelp(_ gap: TimelineActivityPresentation.Gap) -> String {
-        "No captures  |  \(durationLabel(gap.durationMs))"
+        "No captures for \(durationLabel(gap.durationMs))"
     }
 
     private static func gapAccessibilityValue(_ gap: TimelineActivityPresentation.Gap) -> String {
@@ -429,12 +430,11 @@ extension HistoryPane {
         return "\(source), \(SLTimeFormat.full(frame.timestampMs))"
     }
 
-    private func segmentColor(for source: TimelineActivityPresentation.Source) -> Color {
-        let key = source.identity
-        var h: UInt64 = 5381
-        for u in key.utf8 { h = ((h << 5) &+ h) &+ UInt64(u) }
-        let hue = Double(h % 360) / 360.0
-        return Color(hue: hue, saturation: 0.55, brightness: 0.85)
+    private func segmentColor(for _: TimelineActivityPresentation.Source) -> Color {
+        // The ribbon communicates captured activity, not an arbitrary app
+        // category. Source identity remains available through the icon and
+        // hover/VoiceOver context without assigning every app a random hue.
+        model.accentSwiftUIColor
     }
 }
 
@@ -499,7 +499,7 @@ private struct TimelineRunIdentityBadge: View {
                 .strokeBorder(Color.white.opacity(strokeOpacity), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-        .help("\(source.appLabel)  |  \(momentCount) captured moment\(momentCount == 1 ? "" : "s")")
+        .help("\(source.appLabel), \(momentCount) captured moment\(momentCount == 1 ? "" : "s")")
         .accessibilityHidden(true)
     }
 }

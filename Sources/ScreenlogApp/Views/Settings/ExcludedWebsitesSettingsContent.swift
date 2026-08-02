@@ -139,7 +139,9 @@ struct ExcludedWebsitesSettingsContent: View {
                     if let inputFeedback {
                         Label(inputFeedback.message, systemImage: inputFeedback.systemImage)
                             .font(.caption)
-                            .foregroundStyle(inputFeedback.isError ? Color.red : Color.secondary)
+                            .foregroundStyle(
+                                inputFeedback.isError ? SLDesign.error : Color.secondary
+                            )
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(inputFeedback.message)
                             .accessibilityIdentifier("exclusions.website.feedback")
@@ -192,7 +194,7 @@ struct ExcludedWebsitesSettingsContent: View {
                         ) {
                             model.applyExclusionCategory(category, enabled: $0)
                         }
-                        Divider().padding(.leading, 54)
+                        Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                     }
 
                     let privateBrowsingPolicy = ExclusionPolicyPresentation.broaderCategory(
@@ -211,7 +213,7 @@ struct ExcludedWebsitesSettingsContent: View {
                         model.excludePrivateTabs = $0
                     }
 
-                    Divider().padding(.leading, 54)
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                     ExclusionToggleRow(
                         icon: "globe.badge.chevron.backward",
@@ -235,10 +237,13 @@ struct ExcludedWebsitesSettingsContent: View {
                 title: "Find in Website Lists",
                 detail: "Filter recently recorded and explicitly excluded websites."
             )
-            TextField("Filter websites", text: $filterQuery)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityHint("Filters the website lists below without adding an exclusion")
-                .accessibilityIdentifier("exclusions.websites.filter")
+            NativeFilterSearchField(
+                text: $filterQuery,
+                placeholder: "Filter websites",
+                accessibilityIdentifier: "exclusions.websites.filter",
+                accessibilityHelp: "Filters the website lists below without adding an exclusion."
+            )
+            .frame(height: 24)
         }
     }
 
@@ -266,7 +271,7 @@ struct ExcludedWebsitesSettingsContent: View {
                         ForEach(displayedRecordedDomains, id: \.self) { domain in
                             recordedDomainRow(domain)
                             if domain != displayedRecordedDomains.last {
-                                Divider().padding(.leading, 54)
+                                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                             }
                         }
                         if filteredRecordedDomains.count > displayedRecordedDomains.count {
@@ -322,7 +327,7 @@ struct ExcludedWebsitesSettingsContent: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         if domain != displayedExcludedDomains.last {
-                            Divider().padding(.leading, 54)
+                            Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                         }
                     }
                     if filteredExcludedDomains.count > displayedExcludedDomains.count {

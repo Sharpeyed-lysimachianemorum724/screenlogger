@@ -16,14 +16,15 @@ struct StorageSettingsPane: View {
         VStack(alignment: .leading, spacing: SettingsChrome.cardSpacing) {
             StorageOverviewCard()
                 .settingsDestinationAnchor(.storageOverview)
-            StorageManagementCard()
-                .settingsDestinationAnchor(.storageManagement)
-            StorageLibraryToolsCard(
-                showingAdvancedActions: $showingAdvancedActions,
+            StorageManagementCard(
                 applyLimits: {
                     model.refreshStorageCleanupPreflight()
                     showingLimitConfirmation = true
-                },
+                }
+            )
+            .settingsDestinationAnchor(.storageManagement)
+            StorageLibraryToolsCard(
+                showingAdvancedActions: $showingAdvancedActions,
                 reviewTodayDeletion: reviewTodayDeletion,
                 chooseDeletionRange: { showingRangePicker = true },
                 reviewEntireLibraryDeletion: reviewEntireLibraryDeletion

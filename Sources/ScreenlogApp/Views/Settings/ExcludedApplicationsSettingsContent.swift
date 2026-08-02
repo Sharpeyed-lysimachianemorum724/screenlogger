@@ -5,6 +5,7 @@ import SwiftUI
 /// user can add. The parent pane owns navigation and search state.
 struct ExcludedApplicationsSettingsContent: View {
     @EnvironmentObject private var model: AppModel
+    @State private var showingAllAvailableApplications = false
 
     let query: String
     let restoreDefaults: () -> Void
@@ -50,13 +51,13 @@ struct ExcludedApplicationsSettingsContent: View {
                     }
 
                     if !passwordManagersOnThisMac.isEmpty {
-                        Divider().padding(.leading, 54)
+                        Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                         DisclosureGroup {
                             VStack(spacing: 0) {
                                 ForEach(passwordManagersOnThisMac, id: \.bundleID) { app in
                                     passwordManagerRow(app)
                                     if app.bundleID != passwordManagersOnThisMac.last?.bundleID {
-                                        Divider().padding(.leading, 42)
+                                        Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                                     }
                                 }
                             }
@@ -84,7 +85,7 @@ struct ExcludedApplicationsSettingsContent: View {
                     ForEach(filteredExcludedApps, id: \.self) { bundleID in
                         excludedApplicationRow(bundleID)
                         if bundleID != filteredExcludedApps.last {
-                            Divider().padding(.leading, 54)
+                            Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                         }
                     }
                 }
@@ -113,11 +114,28 @@ struct ExcludedApplicationsSettingsContent: View {
                             identifier: content.identifier
                         )
                     case .loaded:
-                        ForEach(filteredInstalledApps.prefix(80), id: \.bundleID) { app in
+                        ForEach(displayedInstalledApps, id: \.bundleID) { app in
                             availableApplicationRow(app)
-                            if app.bundleID != filteredInstalledApps.prefix(80).last?.bundleID {
-                                Divider().padding(.leading, 54)
+                            if app.bundleID != displayedInstalledApps.last?.bundleID {
+                                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                             }
+                        }
+                        if filteredInstalledApps.count > displayedInstalledApps.count {
+                            Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
+                            Button {
+                                showingAllAvailableApplications = true
+                            } label: {
+                                Label(
+                                    "Show \(filteredInstalledApps.count - displayedInstalledApps.count) More",
+                                    systemImage: "chevron.down"
+                                )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("exclusions.applications.show-more")
                         }
                     }
                 }
@@ -151,7 +169,7 @@ struct ExcludedApplicationsSettingsContent: View {
                             model.setSystemAppExcluded(app, excluded: $0)
                         }
                         if app != SystemExclusionApp.allCases.last {
-                            Divider().padding(.leading, 54)
+                            Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                         }
                     }
                 }
@@ -383,6 +401,13 @@ struct ExcludedApplicationsSettingsContent: View {
             $0.bundleID.localizedCaseInsensitiveContains(normalizedQuery)
                 || $0.name.localizedCaseInsensitiveContains(normalizedQuery)
         }
+    }
+
+    private var displayedInstalledApps: [DiscoveredApplication] {
+        if showingAllAvailableApplications || !normalizedQuery.isEmpty {
+            return filteredInstalledApps
+        }
+        return Array(filteredInstalledApps.prefix(80))
     }
 
     private var applicationEmptyContent: (title: String, detail: String, identifier: String) {

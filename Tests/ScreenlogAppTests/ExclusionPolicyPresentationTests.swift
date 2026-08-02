@@ -28,7 +28,7 @@ final class ExclusionPolicyPresentationTests: XCTestCase {
         )
         XCTAssertEqual(
             presentation.provenanceSummary,
-            "Explicit application  |  Entire browser"
+            "Explicit application, Entire browser"
         )
         XCTAssertTrue(presentation.detail.contains("every one of its windows is skipped"))
     }

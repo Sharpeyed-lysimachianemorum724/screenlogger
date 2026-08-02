@@ -71,7 +71,7 @@ struct ExclusionPolicyPresentation: Equatable, Sendable {
 
     var provenanceSummary: String {
         guard !provenance.isEmpty else { return "No matching exclusion" }
-        return provenance.map(\.title).joined(separator: "  |  ")
+        return provenance.map(\.title).joined(separator: ", ")
     }
 
     var accessibilityHint: String {

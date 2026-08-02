@@ -1,3 +1,4 @@
+import ScreenlogCore
 import SwiftUI
 
 /// Progressive Library filters. Time is always available; app and site filters
@@ -69,7 +70,7 @@ struct LibraryFilterPanel: View {
                             }
                             .accessibilityIdentifier("library.filter.time.\(tf.rawValue)")
                         }
-                        filterRow(selected: model.showSearchDatePicker) {
+                        filterRow(selected: exactDateFilterIsActive) {
                             if let onChooseDate {
                                 onChooseDate()
                             } else {
@@ -81,7 +82,7 @@ struct LibraryFilterPanel: View {
                         .accessibilityIdentifier("library.filter.date.choose")
                         .popover(
                             isPresented: datePickerPresentation(for: .sidebar),
-                            arrowEdge: .leading
+                            arrowEdge: .trailing
                         ) {
                             SearchDatePickerPopover()
                                 .environmentObject(model)
@@ -142,6 +143,10 @@ struct LibraryFilterPanel: View {
 
     private func clearAllFilters() {
         model.clearAllLibrarySearchFilters()
+    }
+
+    private var exactDateFilterIsActive: Bool {
+        SearchOperatorParser.parse(model.searchQuery).dayStartMs != nil
     }
 
     private func datePickerPresentation(

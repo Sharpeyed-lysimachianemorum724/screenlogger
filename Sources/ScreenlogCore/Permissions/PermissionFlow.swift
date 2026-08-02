@@ -341,13 +341,17 @@ public final class PermissionFlowCoordinator {
         journey.beginRequest(for: permission)
         let requestAccepted = requestClient.request(permission)
         let verified = requestClient.isGranted(permission)
-        let settingsResult = verified ? nil : settingsOpener.open(permission)
-        lastSettingsResult = settingsResult
+        // The native request API may already present consent UI. Do not also
+        // pull System Settings forward in the same click; that creates a
+        // stacked, spammy flow and can hide the consent sheet. If the grant is
+        // still unavailable, the next explicit action offers System Settings.
+        let settingsResult: PermissionSettingsOpenResult? = nil
+        lastSettingsResult = nil
         journey.completeRequest(
             for: permission,
             requestAccepted: requestAccepted,
             verified: verified,
-            settingsOpened: settingsResult?.opened == true
+            settingsOpened: false
         )
         return PermissionRequestOutcome(
             permission: permission,

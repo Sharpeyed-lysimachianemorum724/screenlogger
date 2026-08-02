@@ -1,29 +1,7 @@
 import Foundation
 import ScreenlogCore
 
-/// Capture quality presets (internal dimension mapping never shown in UI).
-enum CaptureQuality: Int, CaseIterable, Identifiable, Hashable {
-    case p720 = 720
-    case p1080 = 1080
-    case p1440 = 1440
-
-    var id: Int { rawValue }
-    var maxDimension: Int { rawValue }
-
-    var label: String {
-        switch self {
-        case .p720: return "Standard"
-        case .p1080: return "High"
-        case .p1440: return "Ultra"
-        }
-    }
-
-    static func from(maxDimension: Int) -> CaptureQuality {
-        if maxDimension <= 720 { return .p720 }
-        if maxDimension <= 1080 { return .p1080 }
-        return .p1440
-    }
-}
+typealias CaptureQuality = CaptureQualityPreset
 
 /// Loads persisted preferences and applies capture-facing settings.
 ///
@@ -45,11 +23,12 @@ extension AppModel {
         defer { isLoadingSettings = false }
 
         let d = preferences
+        let snap = CapturePreferenceStore.load(from: d)
         if d.object(forKey: DefaultsKey.interval) != nil {
             intervalSeconds = max(0.5, d.double(forKey: DefaultsKey.interval))
         }
         if d.object(forKey: DefaultsKey.maxDimension) != nil {
-            maxDimension = max(480, d.integer(forKey: DefaultsKey.maxDimension))
+            maxDimension = snap.maxDimension
         }
         if d.object(forKey: DefaultsKey.retentionDays) != nil {
             retentionDays = max(1, d.integer(forKey: DefaultsKey.retentionDays))
@@ -76,7 +55,6 @@ extension AppModel {
             storageMode = mode
         }
         // Snapshot-class prefs (same keys as CapturePreferenceStore).
-        let snap = CapturePreferenceStore.load(from: d)
         if d.object(forKey: ProductPreferenceKey.stillEncoding) != nil {
             stillEncoding = snap.stillEncoding
         }
@@ -128,6 +106,9 @@ extension AppModel {
         pinnedSessionIDs = sessionPinStore.pinnedIDs()
         reloadExclusionsFromStore()
         applyAppearancePreference()
+        #if DEBUG
+            AppUITestFixture.applyPresentationOverridesIfRequested(on: self)
+        #endif
         applyDockIconPreference()
     }
 
@@ -152,6 +133,7 @@ extension AppModel {
         engine.applySettings(
             intervalSeconds: intervalSeconds,
             maxDimension: maxDimension,
+            stillQuality: quality.stillCompressionQuality,
             retentionDays: plan.retentionDays,
             storageCapMB: plan.storageCapMB,
             autoCompactEnabled: plan.runCompact,

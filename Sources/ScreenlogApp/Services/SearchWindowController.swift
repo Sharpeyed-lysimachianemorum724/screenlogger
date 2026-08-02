@@ -8,7 +8,9 @@ final class SearchWindowController: NSObject, NSWindowDelegate, NSToolbarDelegat
     private static let frameAutosaveName = "ScreenloggerLibraryWindow"
     private static let toolbarIdentifier = NSToolbar.Identifier("ScreenloggerLibraryToolbar")
     private static let locationItemIdentifier = NSToolbarItem.Identifier("ScreenloggerLibraryLocation")
-    private static let actionsItemIdentifier = NSToolbarItem.Identifier("ScreenloggerLibraryActions")
+    private static let captureItemIdentifier = NSToolbarItem.Identifier("ScreenloggerLibraryCapture")
+    private static let timelineItemIdentifier = NSToolbarItem.Identifier("ScreenloggerLibraryTimeline")
+    private static let settingsItemIdentifier = NSToolbarItem.Identifier("ScreenloggerLibrarySettings")
 
     private var window: NSWindow?
     private weak var model: AppModel?
@@ -49,6 +51,10 @@ final class SearchWindowController: NSObject, NSWindowDelegate, NSToolbarDelegat
             .environmentObject(model)
 
         let hosting = NSHostingController(rootView: root)
+        // AppKit owns the Library window's size contract. Without this,
+        // SwiftUI fitting changes from results, filters, or toolbar controls
+        // can silently replace the tested content minimum.
+        hosting.sizingOptions = []
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1080, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -66,11 +72,11 @@ final class SearchWindowController: NSObject, NSWindowDelegate, NSToolbarDelegat
         win.isReleasedWhenClosed = false
         // Match the SwiftUI root's content minimum. `minSize` includes the
         // titlebar and can otherwise leave the Library's controls clipped.
-        win.contentMinSize = SLDesign.workspaceMinimumSize
         win.backgroundColor = .windowBackgroundColor
         win.isOpaque = true
         win.hasShadow = true
         win.contentViewController = hosting
+        win.contentMinSize = SLDesign.workspaceMinimumSize
         // Assigning a hosting controller adopts its fitting size, so set the
         // intended initial workspace size afterwards.
         win.setContentSize(NSSize(width: 1080, height: 720))
@@ -104,6 +110,10 @@ final class SearchWindowController: NSObject, NSWindowDelegate, NSToolbarDelegat
         win.makeKeyAndOrderFront(nil)
         self.window = win
         requestSearchFocus(model, selectingExistingQuery: intent.selectsExistingQuery)
+        DispatchQueue.main.async { [weak self, weak win] in
+            guard let self, let win, self.window === win else { return }
+            win.contentMinSize = SLDesign.workspaceMinimumSize
+        }
     }
 
     func hide() {
@@ -197,11 +207,23 @@ final class SearchWindowController: NSObject, NSWindowDelegate, NSToolbarDelegat
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.locationItemIdentifier, .flexibleSpace, Self.actionsItemIdentifier]
+        [
+            Self.locationItemIdentifier,
+            .flexibleSpace,
+            Self.captureItemIdentifier,
+            Self.timelineItemIdentifier,
+            Self.settingsItemIdentifier,
+        ]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.locationItemIdentifier, .flexibleSpace, Self.actionsItemIdentifier]
+        [
+            Self.locationItemIdentifier,
+            .flexibleSpace,
+            Self.captureItemIdentifier,
+            Self.timelineItemIdentifier,
+            Self.settingsItemIdentifier,
+        ]
     }
 
     func toolbar(
@@ -218,11 +240,30 @@ final class SearchWindowController: NSObject, NSWindowDelegate, NSToolbarDelegat
                 label: "Library",
                 view: AnyView(LibraryToolbarLocationView())
             )
-        case Self.actionsItemIdentifier:
+        case Self.captureItemIdentifier:
             return hostingToolbarItem(
                 identifier: itemIdentifier,
-                label: "Library Controls",
-                view: AnyView(LibraryToolbarActionsView().environmentObject(model))
+                label: "Capture Status",
+                view: AnyView(
+                    LibraryToolbarActionsView()
+                        .environmentObject(model)
+                )
+            )
+        case Self.timelineItemIdentifier:
+            return navigationToolbarItem(
+                identifier: itemIdentifier,
+                title: "Timeline",
+                symbolName: "clock",
+                action: #selector(showTimeline(_:)),
+                accessibilityIdentifier: "navigation.library.timeline"
+            )
+        case Self.settingsItemIdentifier:
+            return navigationToolbarItem(
+                identifier: itemIdentifier,
+                title: "Settings",
+                symbolName: "gearshape",
+                action: #selector(showSettings(_:)),
+                accessibilityIdentifier: "navigation.library.settings"
             )
         default:
             return nil
@@ -239,6 +280,7 @@ final class SearchWindowController: NSObject, NSWindowDelegate, NSToolbarDelegat
         // A one-time frame derived from `fittingSize` becomes stale as capture
         // state changes and can clip a longer status label.
         hostingView.sizingOptions = [.intrinsicContentSize]
+        hostingView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let item = NSToolbarItem(itemIdentifier: identifier)
         item.label = label
@@ -250,5 +292,37 @@ final class SearchWindowController: NSObject, NSWindowDelegate, NSToolbarDelegat
         item.isBordered = false
         item.visibilityPriority = .high
         return item
+    }
+
+    private func navigationToolbarItem(
+        identifier: NSToolbarItem.Identifier,
+        title: String,
+        symbolName: String,
+        action: Selector,
+        accessibilityIdentifier: String
+    ) -> NSToolbarItem {
+        let button = NSButton(title: title, target: self, action: action)
+        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
+        button.imagePosition = .imageLeading
+        button.bezelStyle = .toolbar
+        button.controlSize = .small
+        button.setAccessibilityIdentifier(accessibilityIdentifier)
+        button.setAccessibilityLabel("Show \(title)")
+
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = title
+        item.paletteLabel = title
+        item.toolTip = "Show \(title)"
+        item.view = button
+        item.visibilityPriority = .high
+        return item
+    }
+
+    @objc private func showTimeline(_ sender: Any?) {
+        model?.openMainShell(origin: .direct)
+    }
+
+    @objc private func showSettings(_ sender: Any?) {
+        model?.openProductSettings()
     }
 }

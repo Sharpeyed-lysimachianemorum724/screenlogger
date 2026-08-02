@@ -33,31 +33,39 @@ struct StorageOverviewCard: View {
                 }
                 .padding(14)
 
-                Divider().padding(.leading, 58)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 28) {
-                        metrics
-                    }
-                    VStack(alignment: .leading, spacing: 14) {
-                        metrics
+                VStack(spacing: 0) {
+                    ForEach(Array(metrics.enumerated()), id: \.element.label) { index, metric in
+                        LabeledContent(metric.label) {
+                            Text(metric.value)
+                                .font(.body.weight(.semibold).monospacedDigit())
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(metric.label), \(metric.value)")
+
+                        if index < metrics.count - 1 {
+                            Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
+                        }
                     }
                 }
-                .padding(14)
 
-                Divider().padding(.leading, 58)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Label(forecastSummary, systemImage: forecastSystemImage)
+                    if forecastIsActionable {
+                        Label(forecastSummary, systemImage: forecastSystemImage)
+                    }
                     Label(lastRefreshSummary, systemImage: "clock")
                     if case .failed = model.storageMeasurementState {
                         Label(
                             "Storage information could not be refreshed. The previous measurement is still shown.",
                             systemImage: "exclamationmark.triangle"
                         )
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(SLDesign.warning)
                     }
-                    Label(storagePolicySummary, systemImage: policySystemImage)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -69,30 +77,18 @@ struct StorageOverviewCard: View {
         .accessibilityIdentifier("settings.storage.summary")
     }
 
-    @ViewBuilder
-    private var metrics: some View {
-        StorageMetricView(
-            value: measurement.map { AppModel.formatByteSize($0.libraryBytes) } ?? "-",
-            label: "Space used"
-        )
-        StorageMetricView(
-            value: measurement.flatMap(\.availableBytes).map { AppModel.formatByteSize($0) } ?? "-",
-            label: "Available on Mac"
-        )
-        StorageMetricView(
-            value: growthValue,
-            label: "Recent change"
-        )
-        StorageMetricView(
-            value: savedMomentsValue,
-            label: "Saved moments"
-        )
-        if let stats = model.stats, stats.unfinalizedFrames > 0 {
-            StorageMetricView(
-                value: stats.unfinalizedFrames.formatted(),
-                label: "Finishing compression"
-            )
-        }
+    private var metrics: [(value: String, label: String)] {
+        [
+            (
+                measurement.map { AppModel.formatByteSize($0.libraryBytes) } ?? "-",
+                "Space used"
+            ),
+            (
+                measurement.flatMap(\.availableBytes).map { AppModel.formatByteSize($0) } ?? "-",
+                "Available on Mac"
+            ),
+            (savedMomentsValue, "Saved moments"),
+        ]
     }
 
     private var savedMomentsValue: String {
@@ -102,13 +98,6 @@ struct StorageOverviewCard: View {
 
     private var measurement: StorageMeasurement? {
         model.storageMeasurementState.measurement
-    }
-
-    private var growthValue: String {
-        guard let delta = measurement?.growth?.byteDelta else { return "-" }
-        if delta == 0 { return "No change" }
-        let magnitude = delta == Int64.min ? Int64.max : abs(delta)
-        return (delta > 0 ? "+" : "-") + AppModel.formatByteSize(magnitude)
     }
 
     private var lastRefreshSummary: String {
@@ -157,6 +146,13 @@ struct StorageOverviewCard: View {
         }
     }
 
+    private var forecastIsActionable: Bool {
+        switch forecast {
+        case .atOrAboveLimit, .estimatedTimeToLimit: return true
+        default: return false
+        }
+    }
+
     private static func forecastDuration(_ interval: TimeInterval) -> String {
         let rawDays = interval / 86_400
         guard rawDays < Double(Int.max) else { return "many years" }
@@ -167,45 +163,4 @@ struct StorageOverviewCard: View {
         return "about \(max(2, days / 30)) months"
     }
 
-    private var storagePolicySummary: String {
-        switch model.storageMode {
-        case .off:
-            return "Automatic cleanup is off. Screenlogger keeps your history until you remove it."
-        case .compress:
-            return "Older capture images are compressed automatically without deleting searchable history."
-        case .limit:
-            if model.storageCapMB > 0 {
-                return
-                    "Capture media is removed after \(model.retentionDays) days or when the Library exceeds "
-                    + "\(StorageSizeInput.formattedCap(model.storageCapMB)). Searchable history remains."
-            }
-            return "Capture media is removed after \(model.retentionDays) days. Searchable history remains."
-        }
-    }
-
-    private var policySystemImage: String {
-        switch model.storageMode {
-        case .off: return "archivebox"
-        case .compress: return "arrow.down.right.and.arrow.up.left"
-        case .limit: return "gauge.with.dots.needle.50percent"
-        }
-    }
-}
-
-private struct StorageMetricView: View {
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.title3.weight(.semibold).monospacedDigit())
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label), \(value)")
-    }
 }

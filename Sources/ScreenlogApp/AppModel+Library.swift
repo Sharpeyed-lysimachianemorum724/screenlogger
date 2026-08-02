@@ -258,23 +258,34 @@ extension AppModel {
     }
 
     func copySelectedFrameImage() {
-        let image: NSImage?
-        if let selectedFrameImage {
-            image = selectedFrameImage
-        } else if let path = selectedTimelineFrame?.imagePath, !path.isEmpty {
-            image = NSImage(contentsOfFile: path)
-        } else {
-            image = nil
-        }
-        guard let image else {
+        guard let frameID = selectedTimelineFrame?.id, let store else {
             publishTimelineMomentAction(.imageUnavailable)
             return
         }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        publishTimelineMomentAction(
-            pb.writeObjects([image]) ? .imageCopied : .imageCopyFailed
-        )
+
+        let worker = Task.detached(priority: .userInitiated) {
+            guard let row = try await store.readAsync({ try $0.frame(id: frameID) }) else {
+                throw FrameExtractor.ExtractError.imageGenerationFailed("frame not found")
+            }
+            return try await FrameExtractor.cgImage(forFrame: row, store: store)
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let cgImage = try await worker.value
+                let image = NSImage(
+                    cgImage: cgImage,
+                    size: NSSize(width: cgImage.width, height: cgImage.height)
+                )
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                publishTimelineMomentAction(
+                    pasteboard.writeObjects([image]) ? .imageCopied : .imageCopyFailed
+                )
+            } catch {
+                publishTimelineMomentAction(.imageUnavailable)
+            }
+        }
     }
 
     func copySelectedOCRText() {
@@ -466,11 +477,11 @@ extension AccentColorPreference {
     var swiftUIColor: Color {
         switch self {
         case .system: return .accentColor
-        case .azure: return Color(red: 0.20, green: 0.48, blue: 0.96)
-        case .purple: return Color(red: 0.58, green: 0.35, blue: 0.95)
-        case .pink: return Color(red: 0.95, green: 0.35, blue: 0.55)
-        case .orange: return Color(red: 0.98, green: 0.55, blue: 0.20)
-        case .green: return Color(red: 0.25, green: 0.75, blue: 0.45)
+        case .azure: return Color(nsColor: .systemBlue)
+        case .purple: return Color(nsColor: .systemPurple)
+        case .pink: return Color(nsColor: .systemPink)
+        case .orange: return Color(nsColor: .systemOrange)
+        case .green: return Color(nsColor: .systemGreen)
         }
     }
 }

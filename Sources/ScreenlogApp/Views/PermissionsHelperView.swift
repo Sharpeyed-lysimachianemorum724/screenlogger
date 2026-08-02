@@ -15,6 +15,7 @@ struct PermissionsHelperView: View {
     @State private var showingMissingAppHelp = false
     @State private var openedPermission: ScreenlogPermission?
     @State private var pendingPermissionTransition = false
+    @State private var firstRunWaitIsLong = false
     @FocusState private var decisionFocus: DecisionFocus?
     @AccessibilityFocusState private var decisionAccessibilityFocus: DecisionFocus?
     let origin: CaptureSetupOrigin
@@ -25,6 +26,7 @@ struct PermissionsHelperView: View {
     let onOpenScreen: () -> Void
     let onOpenAccessibility: () -> Void
     let onRefresh: () -> Void
+    let onRelaunch: () -> Void
 
     private var appName: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
@@ -69,11 +71,6 @@ struct PermissionsHelperView: View {
                             captureStartFailed: model.captureIssue == .startFailed
                         )
                     }
-                    PermissionsStatusCard(
-                        screenRecordingAllowed: model.permissions.screenRecording,
-                        accessibilityAllowed: model.permissions.accessibility
-                    )
-                    PermissionsPrivacySummary()
                     if let openedPermission,
                         !model.permissions.screenRecording || !model.permissions.accessibility
                     {
@@ -86,6 +83,11 @@ struct PermissionsHelperView: View {
                             onRetry: retryOpenedPermission
                         )
                     }
+                    PermissionsStatusCard(
+                        screenRecordingAllowed: model.permissions.screenRecording,
+                        accessibilityAllowed: model.permissions.accessibility
+                    )
+                    PermissionsPrivacySummary()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
@@ -94,9 +96,15 @@ struct PermissionsHelperView: View {
             Divider()
             actionBar
         }
-        .frame(minWidth: 460, idealWidth: 620, minHeight: 460, idealHeight: 600)
+        .frame(minWidth: 460, idealWidth: 620, minHeight: 428, idealHeight: 600)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(model.accentSwiftUIColor)
+        .onAppear {
+            DispatchQueue.main.async {
+                decisionFocus = .primary
+                decisionAccessibilityFocus = .primary
+            }
+        }
         .onExitCommand {
             if isFirstRunWaiting {
                 onDismiss()
@@ -120,9 +128,27 @@ struct PermissionsHelperView: View {
                 isGranted: granted
             )
         }
+        .onChange(of: model.permissions.isCaptureReady) { _, isReady in
+            guard isReady else { return }
+            // The primary control changes identity when the second permission
+            // arrives. Re-establish keyboard focus so Space and Return activate
+            // Start Capture without requiring a pointer click.
+            decisionFocus = nil
+            DispatchQueue.main.async {
+                decisionFocus = .primary
+                decisionAccessibilityFocus = .primary
+            }
+        }
         .onChange(of: controlActiveState) { _, activeState in
             guard activeState == .key else { return }
             presentPendingPermissionTransitionIfPossible()
+        }
+        .task(id: isFirstRunWaiting) {
+            firstRunWaitIsLong = false
+            guard isFirstRunWaiting else { return }
+            try? await Task.sleep(for: .seconds(12))
+            guard !Task.isCancelled, isFirstRunWaiting else { return }
+            firstRunWaitIsLong = true
         }
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil }
@@ -234,8 +260,12 @@ struct PermissionsHelperView: View {
         }
         if isFirstRunWaiting {
             return (
-                "Saving your first moment",
-                "Keep this window open while Screenlogger stores and indexes one searchable moment.",
+                firstRunWaitIsLong
+                    ? "Still saving your first moment"
+                    : "Saving your first moment",
+                firstRunWaitIsLong
+                    ? "This is taking longer than expected. Capture is still on; you can keep waiting or stop and open Library."
+                    : "Keep this window open while Screenlogger stores and indexes one searchable moment.",
                 "arrow.triangle.2.circlepath",
                 model.accentSwiftUIColor
             )
@@ -278,6 +308,7 @@ struct PermissionsHelperView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .accessibilityElement(children: .combine)
+                .accessibilityLabel(actionGuidance.text)
                 .accessibilityIdentifier("setup.return-guidance")
 
             ViewThatFits(in: .horizontal) {
@@ -418,24 +449,42 @@ struct PermissionsHelperView: View {
             }
         } else {
             keepCaptureOffButton
-            Button(primaryPermissionActionTitle) {
-                guard let permission = nextRequiredPermission else { return }
-                openedPermission = permission
-                switch permission {
-                case .screenRecording:
-                    onOpenScreen()
-                case .accessibility:
-                    onOpenAccessibility()
+            if nextPermissionNeedsRelaunch {
+                Button("Quit & Reopen Screenlogger", action: onRelaunch)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .focused($decisionFocus, equals: .primary)
+                    .accessibilityFocused($decisionAccessibilityFocus, equals: .primary)
+                    .accessibilityHint(
+                        "Quit and reopen Screenlogger so macOS can finish applying Screen Recording access"
+                    )
+                    .accessibilityIdentifier("setup.relaunch")
+            } else {
+                Button(primaryPermissionActionTitle) {
+                    guard let permission = nextRequiredPermission else { return }
+                    openedPermission = permission
+                    showingMissingAppHelp = true
+                    switch permission {
+                    case .screenRecording:
+                        onOpenScreen()
+                    case .accessibility:
+                        onOpenAccessibility()
+                    }
                 }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .focused($decisionFocus, equals: .primary)
+                .accessibilityFocused($decisionAccessibilityFocus, equals: .primary)
+                .accessibilityLabel(primaryPermissionActionTitle)
+                .accessibilityHint(primaryPermissionActionHint)
+                .accessibilityIdentifier(primaryPermissionActionIdentifier)
             }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .focused($decisionFocus, equals: .primary)
-            .accessibilityFocused($decisionAccessibilityFocus, equals: .primary)
-            .accessibilityLabel(primaryPermissionActionTitle)
-            .accessibilityHint(primaryPermissionActionHint)
-            .accessibilityIdentifier(primaryPermissionActionIdentifier)
         }
+    }
+
+    private var nextPermissionNeedsRelaunch: Bool {
+        guard let permission = nextRequiredPermission else { return false }
+        return model.permissionJourney.state(for: permission) == .restartRequired
     }
 
     private var primaryPermissionActionTitle: String {
@@ -471,8 +520,7 @@ struct PermissionsHelperView: View {
 
     private var keepCaptureOffButton: some View {
         Button(keepCaptureOffTitle, action: onDismiss)
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .buttonStyle(.bordered)
             .keyboardShortcut(.cancelAction)
             .accessibilityHint(keepCaptureOffHint)
             .accessibilityIdentifier("setup.keep-off")
@@ -516,6 +564,7 @@ struct PermissionsHelperView: View {
         // matching System Settings pane should move focus. Background refreshes
         // and an already-configured launch keep the user's current locus.
         openedPermission = nil
+        showingMissingAppHelp = false
         pendingPermissionTransition = true
         presentPendingPermissionTransitionIfPossible()
     }

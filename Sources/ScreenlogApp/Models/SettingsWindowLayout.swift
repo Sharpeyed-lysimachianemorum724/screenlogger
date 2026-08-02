@@ -6,9 +6,9 @@ import Foundation
 /// it should remain a compact preference workspace. Keeping this policy pure
 /// makes legacy frame restoration deterministic and independently testable.
 enum SettingsWindowLayout {
-    static let minimumContentSize = CGSize(width: 760, height: 500)
+    static let minimumContentSize = CGSize(width: 820, height: 540)
     static let defaultContentSize = CGSize(width: 860, height: 600)
-    static let maximumContentWidth: CGFloat = 1_240
+    static let maximumContentWidth: CGFloat = 980
 
     static func constrainedContentSize(_ proposed: CGSize) -> CGSize {
         CGSize(

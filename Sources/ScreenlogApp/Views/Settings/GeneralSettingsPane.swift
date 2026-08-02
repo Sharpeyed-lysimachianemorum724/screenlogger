@@ -44,21 +44,7 @@ struct GeneralSettingsPane: View {
                     }
                     .padding(14)
 
-                    Divider().padding(.leading, 58)
-
-                    SettingsCardRow(
-                        icon: "menubar.rectangle",
-                        title: "Menu Bar",
-                        subtitle: "Screenlogger stays available in the menu bar whenever it is running."
-                    ) {
-                        Label("Available", systemImage: "checkmark")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(SLDesign.success)
-                            .accessibilityElement(children: .combine)
-                    }
-                    .padding(14)
-
-                    Divider().padding(.leading, 58)
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                     SettingsCardRow(
                         icon: "dock.rectangle",

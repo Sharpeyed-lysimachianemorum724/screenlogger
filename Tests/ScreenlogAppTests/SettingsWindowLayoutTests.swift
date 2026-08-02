@@ -6,18 +6,18 @@ final class SettingsWindowLayoutTests: XCTestCase {
             SettingsWindowLayout.constrainedContentSize(
                 CGSize(width: 1_920, height: 900)
             ),
-            CGSize(width: 1_240, height: 900)
+            CGSize(width: 980, height: 900)
         )
         XCTAssertEqual(
             SettingsWindowLayout.constrainedContentSize(
                 CGSize(width: 620, height: 420)
             ),
-            CGSize(width: 760, height: 500)
+            CGSize(width: 820, height: 540)
         )
     }
 
     func testSettingsContentSizePreservesSupportedUserSize() {
-        let proposed = CGSize(width: 1_000, height: 680)
+        let proposed = CGSize(width: 900, height: 680)
 
         XCTAssertEqual(
             SettingsWindowLayout.constrainedContentSize(proposed),
@@ -31,9 +31,9 @@ final class SettingsWindowLayoutTests: XCTestCase {
         XCTAssertEqual(
             SettingsWindowLayout.centeredOriginX(
                 originalFrame: original,
-                constrainedFrameWidth: 1_240
+                constrainedFrameWidth: 980
             ),
-            440
+            570
         )
     }
 }

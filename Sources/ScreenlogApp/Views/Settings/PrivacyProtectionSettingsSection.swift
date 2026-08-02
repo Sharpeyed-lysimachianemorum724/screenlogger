@@ -7,7 +7,7 @@ struct PrivacyProtectionSettingsSection: View {
     let openExclusions: () -> Void
 
     var body: some View {
-        PrivacySettingsGroup("Protected Activity", systemImage: "eye.slash") {
+        PrivacySettingsGroup("Exclusions", systemImage: "eye.slash") {
             PrivacySettingsRow(
                 icon: "app.badge.checkmark",
                 title: "Excluded apps and websites",
@@ -19,52 +19,6 @@ struct PrivacyProtectionSettingsSection: View {
                     .accessibilityIdentifier("privacy.exclusions.manage")
             }
             .padding(14)
-
-            PrivacySettingsDivider()
-
-            PrivacySettingsRow(
-                icon: model.pauseWhenBrowserAddressUnavailable
-                    ? "checkmark.shield.fill"
-                    : "shield.lefthalf.filled",
-                iconColor: model.pauseWhenBrowserAddressUnavailable ? SLDesign.success : .secondary,
-                title: "When a website cannot be identified",
-                detail: model.pauseWhenBrowserAddressUnavailable
-                    ? "Supported browsers are skipped until their active website can be identified."
-                    : "The browser may still be saved, so website exclusions cannot be guaranteed for that moment."
-            ) {
-                Button("Review...", action: openExclusions)
-                    .controlSize(.small)
-                    .accessibilityHint("Opens website exclusion protection settings")
-                    .accessibilityIdentifier("privacy.exclusions.website-protection")
-            }
-            .padding(14)
-
-            PrivacySettingsDivider()
-
-            PrivacySettingsRow(
-                icon: model.excludePrivateTabs ? "hand.raised.fill" : "hand.raised.slash",
-                iconColor: model.excludePrivateTabs ? SLDesign.success : .secondary,
-                title: "Private browsing windows",
-                detail: model.excludePrivateTabs
-                    ? "Skipped when a supported browser exposes a recognizable Private, Incognito, or InPrivate window."
-                    : "Not skipped. Turn this protection on in Exclusions to omit detectable private windows."
-            ) {
-                PrivacyStatusLabel(
-                    text: model.excludePrivateTabs ? "Skipped" : "Not skipped",
-                    systemImage: model.excludePrivateTabs ? "checkmark" : "minus"
-                )
-            }
-            .padding(14)
-
-            Text(
-                "Exclusions are checked before a frame is stored. Website and private-window protection can only act on information the active app and macOS make available."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 14)
-            .padding(.bottom, 12)
-            .accessibilityLabel("About exclusion limits")
         }
         .accessibilityIdentifier("privacy.protection")
     }

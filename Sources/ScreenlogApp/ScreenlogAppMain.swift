@@ -185,6 +185,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: Self.launchRouteNotification,
             object: Bundle.main.bundleIdentifier
         )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(accessibilityDisplayOptionsDidChange(_:)),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -272,8 +278,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func accessibilityDisplayOptionsDidChange(_ notification: Notification) {
+        appModel.applyAppearancePreference()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         DistributedNotificationCenter.default().removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         releaseInstanceLock()
         statusMenuController?.invalidate()
         statusMenuController = nil

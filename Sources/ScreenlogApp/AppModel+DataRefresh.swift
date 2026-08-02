@@ -178,7 +178,13 @@ extension AppModel {
 
     private func requestPermission(_ permission: ScreenlogPermission) {
         let outcome = permissionFlowCoordinator.request(permission)
-        let snapshot = PermissionsSnapshot.currentFast()
+        #if DEBUG
+            let snapshot =
+                AppUITestFixture.permissionsSnapshot
+                ?? PermissionsSnapshot.currentFast()
+        #else
+            let snapshot = PermissionsSnapshot.currentFast()
+        #endif
         permissions = snapshot
         permissionFlowCoordinator.refresh(with: snapshot)
         permissionJourney = permissionFlowCoordinator.journey

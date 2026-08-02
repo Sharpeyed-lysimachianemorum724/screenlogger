@@ -286,7 +286,7 @@ enum CaptureStatusResolver {
                 let time = formatTime(activePauseUntil)
                 detail =
                     "Finish Permissions setup to resume capture. The pause scheduled until \(time) will stay in place."
-                compactDetail = "Finish Permissions setup  |  resumes at \(time)"
+                compactDetail = "Finish Permissions setup, then capture resumes at \(time)"
             } else {
                 detail = permissionSetupDetail(input.permissions)
                 compactDetail = "Finish Permissions setup"

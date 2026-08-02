@@ -484,10 +484,16 @@ public final class VideoCompactionService: @unchecked Sendable {
         for codec in codecs {
             do {
                 let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+                let compressionProperties = Self.compressionProperties(
+                    width: width,
+                    height: height,
+                    codec: codec
+                )
                 let settings: [String: Any] = [
                     AVVideoCodecKey: codec,
                     AVVideoWidthKey: width,
                     AVVideoHeightKey: height,
+                    AVVideoCompressionPropertiesKey: compressionProperties,
                 ]
                 let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
                 input.expectsMediaDataInRealTime = false
@@ -522,6 +528,44 @@ public final class VideoCompactionService: @unchecked Sendable {
         throw CompactionError.encodeFailed(
             lastError?.localizedDescription ?? "no video codec available"
         )
+    }
+
+    /// Screen captures need materially more precision than camera footage at
+    /// the same dimensions because one-pixel text edges must survive. Scale the
+    /// target with pixel count and keep conservative floors for small captures.
+    static func targetAverageBitRate(
+        width: Int,
+        height: Int,
+        codec: AVVideoCodecType
+    ) -> Int {
+        let pixels = max(1, width) * max(1, height)
+        let bitsPerPixelPerSecond = codec == .hevc ? 1.2 : 1.6
+        let floor = codec == .hevc ? 4_000_000 : 6_000_000
+        let scaled = Int((Double(pixels) * bitsPerPixelPerSecond).rounded())
+        return min(60_000_000, max(floor, scaled))
+    }
+
+    static func compressionProperties(
+        width: Int,
+        height: Int,
+        codec: AVVideoCodecType
+    ) -> [String: Any] {
+        let profile: String =
+            codec == .hevc
+            ? (kVTProfileLevel_HEVC_Main_AutoLevel as String)
+            : AVVideoProfileLevelH264HighAutoLevel
+        return [
+            AVVideoAverageBitRateKey: targetAverageBitRate(
+                width: width,
+                height: height,
+                codec: codec
+            ),
+            AVVideoQualityKey: 0.96,
+            AVVideoExpectedSourceFrameRateKey: 2,
+            AVVideoMaxKeyFrameIntervalKey: 10,
+            AVVideoAllowFrameReorderingKey: false,
+            AVVideoProfileLevelKey: profile,
+        ]
     }
 
     // MARK: - Pixel path (HEIC/JPEG/PNG to BGRA CVPixelBuffer)
@@ -565,7 +609,7 @@ public final class VideoCompactionService: @unchecked Sendable {
             )
         else { return nil }
 
-        ctx.interpolationQuality = .medium
+        ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         return pb
     }

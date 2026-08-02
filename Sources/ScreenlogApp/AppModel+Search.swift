@@ -409,6 +409,7 @@ extension AppModel {
                         nanoseconds: LibrarySearchInteractionPolicy.debounceNanoseconds
                     )
                     guard let self, !Task.isCancelled else { return }
+                    self.searchDebounceTask = nil
                     await self.runSearch()
                 }
             } else {
@@ -438,6 +439,11 @@ extension AppModel {
                 nanoseconds: LibrarySearchInteractionPolicy.debounceNanoseconds
             )
             guard let self, !Task.isCancelled else { return }
+            // Clear our own handle before entering the authoritative search.
+            // `startLibrarySearch` cancels any *older* debounce task; retaining
+            // this task there would make it cancel itself and suppress the
+            // result publication that follows.
+            self.searchDebounceTask = nil
             await self.runSearch()
         }
     }

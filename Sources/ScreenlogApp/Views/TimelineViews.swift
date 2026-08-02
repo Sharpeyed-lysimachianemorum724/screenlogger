@@ -21,8 +21,10 @@ struct HistoryPane: View {
                     Color.black
                     LibraryStartupRecoveryView(issue: issue, surface: .timeline)
                 }
+                .environment(\.colorScheme, .dark)
             } else {
                 timelineSurface
+                    .environment(\.colorScheme, .dark)
             }
         }
         .tint(model.accentSwiftUIColor)

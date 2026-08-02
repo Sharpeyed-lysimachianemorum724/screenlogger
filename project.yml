@@ -103,6 +103,7 @@ targets:
 
   ScreenlogApp:
     type: application
+    productName: Screenlogger
     platform: macOS
     sources:
       - path: Sources/ScreenlogApp
@@ -191,6 +192,7 @@ targets:
 
   ScreenlogCLI:
     type: tool
+    productName: screenlog
     platform: macOS
     sources:
       - path: Sources/ScreenlogCLI

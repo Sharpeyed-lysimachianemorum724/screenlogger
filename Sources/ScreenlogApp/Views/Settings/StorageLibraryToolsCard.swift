@@ -6,7 +6,6 @@ struct StorageLibraryToolsCard: View {
     @EnvironmentObject private var model: AppModel
     @Binding var showingAdvancedActions: Bool
 
-    let applyLimits: () -> Void
     let reviewTodayDeletion: () -> Void
     let chooseDeletionRange: () -> Void
     let reviewEntireLibraryDeletion: () -> Void
@@ -15,11 +14,11 @@ struct StorageLibraryToolsCard: View {
         SettingsCard(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 libraryLocationRow
-                Divider().padding(.leading, 58)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                 backupAndRestoreSection
-                Divider().padding(.leading, 58)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                 compressionSection
-                Divider().padding(.leading, 58)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                 advancedActions
             }
         }
@@ -111,16 +110,6 @@ struct StorageLibraryToolsCard: View {
                     }
                 }
 
-                Text("Library location")
-                    .font(.caption.weight(.semibold))
-                Text(ScreenlogPaths.resolvedRoot().path)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Library location")
-                    .accessibilityValue(ScreenlogPaths.resolvedRoot().path)
-
                 StorageDeletionStatusView()
             }
             .padding(.top, 10)
@@ -135,14 +124,6 @@ struct StorageLibraryToolsCard: View {
 
     @ViewBuilder
     private var advancedActionButtons: some View {
-        if model.storageMode == .limit {
-            Button("Apply Limits Now", action: applyLimits)
-                .buttonStyle(.bordered)
-                .disabled(exclusiveOperationActive)
-                .accessibilityHint("Review permanent removal of capture media beyond the current limits")
-                .accessibilityIdentifier("settings.storage.apply-limits")
-        }
-
         Menu {
             Button(action: reviewTodayDeletion) {
                 Label("Today...", systemImage: "calendar")

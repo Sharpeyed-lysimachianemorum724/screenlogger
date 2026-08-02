@@ -113,6 +113,11 @@ final class PerformanceMeasurementTests: XCTestCase {
         )
     }
 
+    func testSelectedTimelinePreviewDoesNotDownsampleAppleSixKDisplays() {
+        XCTAssertGreaterThanOrEqual(TimelinePreviewPolicy.selectedMaxPixelSize, 6_016)
+        XCTAssertGreaterThanOrEqual(FrameExtractor.exportedStillQuality, 0.95)
+    }
+
     func testTimelineSelectionAfterPauseIsAllowedToDecode() {
         XCTAssertEqual(
             TimelinePreviewPolicy.settledSelectionIndices(

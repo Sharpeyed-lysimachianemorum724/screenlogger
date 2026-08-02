@@ -27,6 +27,8 @@ struct AppearanceSettingsPane: View {
                         .accessibilityIdentifier("settings.appearance.theme")
                     }
 
+                    Divider().padding(.leading, 36)
+
                     SettingsCardRow(
                         icon: "paintpalette",
                         title: "Accent Color",
@@ -80,6 +82,7 @@ struct AppearanceSettingsPane: View {
                         identifier: "open-source",
                         isOn: $model.showOpenExternally
                     )
+                    Divider().padding(.leading, 36)
                     timelineToggle(
                         icon: "text.viewfinder",
                         title: "Detected text highlights",
@@ -87,6 +90,7 @@ struct AppearanceSettingsPane: View {
                         identifier: "detected-text",
                         isOn: $model.showLiveText
                     )
+                    Divider().padding(.leading, 36)
                     timelineToggle(
                         icon: "plus.magnifyingglass",
                         title: "Zoom buttons",
@@ -101,6 +105,7 @@ struct AppearanceSettingsPane: View {
                         identifier: "zoom",
                         isOn: $model.showZoomControls
                     )
+                    Divider().padding(.leading, 36)
                     timelineToggle(
                         icon: "chevron.left.forwardslash.chevron.right",
                         title: "Activity navigation buttons",
@@ -123,11 +128,11 @@ struct AppearanceSettingsPane: View {
     private var themeSubtitle: String {
         switch model.appearancePreference {
         case .system:
-            return "Following this Mac's current appearance."
+            return "Following this Mac's appearance. The Timeline canvas stays dark."
         case .light:
-            return "Always using the Light appearance."
+            return "Using Light app chrome. The Timeline canvas stays dark."
         case .dark:
-            return "Always using the Dark appearance."
+            return "Using Dark app chrome and a dark Timeline canvas."
         }
     }
 
@@ -195,14 +200,6 @@ private struct AccentColorSwatch: View {
     }
 
     private var fill: AnyShapeStyle {
-        if preference == .system {
-            return AnyShapeStyle(
-                AngularGradient(
-                    colors: [.red, .orange, .yellow, .green, .blue, .purple, .red],
-                    center: .center
-                )
-            )
-        }
         return AnyShapeStyle(preference.swiftUIColor)
     }
 }

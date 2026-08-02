@@ -50,7 +50,7 @@ struct PrivacySettingsRow<Trailing: View>: View {
 
 struct PrivacySettingsDivider: View {
     var body: some View {
-        Divider().padding(.leading, 52)
+        Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
     }
 }
 

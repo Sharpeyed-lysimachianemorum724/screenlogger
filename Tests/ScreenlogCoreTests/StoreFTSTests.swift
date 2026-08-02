@@ -796,6 +796,29 @@ final class StoreFTSTests: XCTestCase {
         )
     }
 
+    func testCompactionBitRateScalesForScreenDetailAndCodecEfficiency() {
+        let smallHEVC = VideoCompactionService.targetAverageBitRate(
+            width: 1_920,
+            height: 1_080,
+            codec: .hevc
+        )
+        let retinaHEVC = VideoCompactionService.targetAverageBitRate(
+            width: 3_456,
+            height: 2_234,
+            codec: .hevc
+        )
+        let retinaH264 = VideoCompactionService.targetAverageBitRate(
+            width: 3_456,
+            height: 2_234,
+            codec: .h264
+        )
+
+        XCTAssertGreaterThanOrEqual(smallHEVC, 4_000_000)
+        XCTAssertGreaterThan(retinaHEVC, smallHEVC)
+        XCTAssertGreaterThan(retinaH264, retinaHEVC)
+        XCTAssertLessThanOrEqual(retinaH264, 60_000_000)
+    }
+
     func testCompactOnlyDeletesSuccessfullyEncodedFrames() throws {
         let w = 64
         let h = 64

@@ -8,10 +8,13 @@ final class MainShellController: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private static let frameAutosaveName = "ScreenloggerTimelineWindow"
     private static let toolbarIdentifier = NSToolbar.Identifier("ScreenloggerTimelineToolbar")
     private static let contextItemIdentifier = NSToolbarItem.Identifier("ScreenloggerTimelineContext")
-    private static let actionsItemIdentifier = NSToolbarItem.Identifier("ScreenloggerTimelineActions")
+    private static let captureItemIdentifier = NSToolbarItem.Identifier("ScreenloggerTimelineCapture")
+    private static let libraryItemIdentifier = NSToolbarItem.Identifier("ScreenloggerTimelineLibrary")
+    private static let settingsItemIdentifier = NSToolbarItem.Identifier("ScreenloggerTimelineSettings")
 
     private var window: NSWindow?
     private weak var model: AppModel?
+    private weak var libraryButton: NSButton?
 
     private override init() {
         super.init()
@@ -31,6 +34,7 @@ final class MainShellController: NSObject, NSWindowDelegate, NSToolbarDelegate {
             AppUITestFixture.installIfRequested(on: model)
         #endif
         self.model = model
+        updateLibraryButton()
         model.shellVisible = true
         // Ensure windows can become key under LSUIElement / accessory policy.
         if model.showDockIcon {
@@ -186,11 +190,23 @@ final class MainShellController: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.contextItemIdentifier, .flexibleSpace, Self.actionsItemIdentifier]
+        [
+            Self.contextItemIdentifier,
+            .flexibleSpace,
+            Self.captureItemIdentifier,
+            Self.libraryItemIdentifier,
+            Self.settingsItemIdentifier,
+        ]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.contextItemIdentifier, .flexibleSpace, Self.actionsItemIdentifier]
+        [
+            Self.contextItemIdentifier,
+            .flexibleSpace,
+            Self.captureItemIdentifier,
+            Self.libraryItemIdentifier,
+            Self.settingsItemIdentifier,
+        ]
     }
 
     func toolbar(
@@ -205,19 +221,35 @@ final class MainShellController: NSObject, NSWindowDelegate, NSToolbarDelegate {
             return hostingToolbarItem(
                 identifier: itemIdentifier,
                 label: "Timeline",
-                view: AnyView(TimelineToolbarContextView().environmentObject(model)),
+                view: AnyView(
+                    TimelineToolbarContextView()
+                        .environmentObject(model)
+                ),
                 minimumWidth: 132,
                 maximumWidth: 560,
                 priority: .standard
             )
-        case Self.actionsItemIdentifier:
+        case Self.captureItemIdentifier:
             return hostingToolbarItem(
                 identifier: itemIdentifier,
-                label: "Timeline Controls",
-                view: AnyView(TimelineToolbarActionsView().environmentObject(model)),
+                label: "Capture Status",
+                view: AnyView(
+                    TimelineToolbarActionsView()
+                        .environmentObject(model)
+                ),
                 minimumWidth: 148,
                 maximumWidth: 360,
                 priority: .high
+            )
+        case Self.libraryItemIdentifier:
+            return libraryToolbarItem(identifier: itemIdentifier)
+        case Self.settingsItemIdentifier:
+            return navigationToolbarItem(
+                identifier: itemIdentifier,
+                title: "Settings",
+                symbolName: "gearshape",
+                action: #selector(showSettings(_:)),
+                accessibilityIdentifier: "navigation.timeline.settings"
             )
         default:
             return nil
@@ -261,8 +293,81 @@ final class MainShellController: NSObject, NSWindowDelegate, NSToolbarDelegate {
         return item
     }
 
+    private func libraryToolbarItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
+        let item = navigationToolbarItem(
+            identifier: identifier,
+            title: "Library",
+            symbolName: "books.vertical",
+            action: #selector(showLibrary(_:)),
+            accessibilityIdentifier: "navigation.timeline.library"
+        )
+        libraryButton = item.view as? NSButton
+        updateLibraryButton()
+        return item
+    }
+
+    private func navigationToolbarItem(
+        identifier: NSToolbarItem.Identifier,
+        title: String,
+        symbolName: String,
+        action: Selector,
+        accessibilityIdentifier: String
+    ) -> NSToolbarItem {
+        let button = NSButton(title: title, target: self, action: action)
+        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
+        button.imagePosition = .imageLeading
+        button.bezelStyle = .toolbar
+        button.controlSize = .small
+        button.setAccessibilityIdentifier(accessibilityIdentifier)
+        button.setAccessibilityLabel("Show \(title)")
+
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = title
+        item.paletteLabel = title
+        item.toolTip = "Show \(title)"
+        item.view = button
+        item.visibilityPriority = .high
+        return item
+    }
+
+    private func updateLibraryButton() {
+        guard let libraryButton, let model else { return }
+        let returnsToSearch = model.timelineNavigationOrigin == .libraryResult
+        let title = returnsToSearch ? "Back to Library" : "Library"
+        libraryButton.title = title
+        libraryButton.image = NSImage(
+            systemSymbolName: returnsToSearch ? "chevron.left" : "books.vertical",
+            accessibilityDescription: title
+        )
+        libraryButton.toolTip =
+            returnsToSearch
+            ? "Return to your Library search and filters"
+            : "Show Library"
+        libraryButton.setAccessibilityLabel(title)
+        libraryButton.setAccessibilityIdentifier(
+            returnsToSearch
+                ? "navigation.timeline.back-to-search"
+                : "navigation.timeline.library"
+        )
+    }
+
+    @objc private func showLibrary(_ sender: Any?) {
+        guard let model else { return }
+        if model.timelineNavigationOrigin == .libraryResult {
+            model.returnToLibrary()
+        } else {
+            model.openSearchWindow()
+        }
+    }
+
+    @objc private func showSettings(_ sender: Any?) {
+        model?.openProductSettings()
+    }
+
     private func enforceWorkspaceMinimum(on window: NSWindow) {
-        guard window.contentMinSize != SLDesign.workspaceMinimumSize else { return }
+        // Hosted toolbar items can raise the frame minimum after the content
+        // contract was installed. Reassert this unconditionally so their
+        // intrinsic width never prevents the compact toolbar variants.
         window.contentMinSize = SLDesign.workspaceMinimumSize
     }
 }

@@ -619,12 +619,12 @@ extension AppModel {
                 return assistantIntegrationInspectionIssueDetail(issue)
             }
             return d.isPresent
-                ? "Detected  |  integration status unavailable"
-                : "Not detected  |  integration status unavailable"
+                ? "Detected, but integration status is unavailable"
+                : "Not detected; integration status is unavailable"
         }
         if !d.isPresent {
             return inspection.isOwned
-                ? "Not detected  |  integration files present"
+                ? "Not detected, but integration files are present"
                 : "Not on this Mac"
         }
         var bits: [String] = []
@@ -646,7 +646,7 @@ extension AppModel {
         case .notInstalled:
             break
         }
-        return bits.isEmpty ? "Detected" : bits.joined(separator: "  |  ")
+        return bits.isEmpty ? "Detected" : bits.joined(separator: ", ")
     }
 
     func installAgentSkill(_ target: AgentSkillTarget, reinstall: Bool = false) {

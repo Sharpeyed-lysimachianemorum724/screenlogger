@@ -18,7 +18,6 @@ struct LocalToolAccessSettingsSection: View {
         VStack(alignment: .leading, spacing: SettingsChrome.cardSpacing) {
             readinessOverview
             if isReady {
-                testSearchCard
                 verifiedCommandDetails
             } else {
                 setupActions
@@ -87,17 +86,17 @@ struct LocalToolAccessSettingsSection: View {
                 connectionRow
                     .padding(14)
 
-                Divider().padding(.leading, 50)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                 commandRow
                     .padding(14)
 
-                Divider().padding(.leading, 50)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                 verificationRow
                     .padding(14)
 
-                Divider().padding(.leading, 50)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                 mutationAccessRow
                     .padding(14)
@@ -299,6 +298,7 @@ struct LocalToolAccessSettingsSection: View {
     private var verifiedCommandDetails: some View {
         DisclosureGroup(isExpanded: $showingVerifiedDetails) {
             VStack(alignment: .leading, spacing: SettingsChrome.cardSpacing) {
+                testSearchCard
                 setupActions
                 commandTechnicalDetails
             }

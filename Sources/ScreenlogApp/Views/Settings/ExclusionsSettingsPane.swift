@@ -11,22 +11,18 @@ struct ExclusionsSettingsPane: View {
         case websites
     }
 
-    private enum FocusedField: Hashable {
-        case applicationSearch
-    }
-
     @EnvironmentObject private var model: AppModel
     @Environment(\.settingsDestinationFocusRequest) private var destinationFocusRequest
     @State private var selection: Selection = .applications
     @State private var applicationQuery = ""
     @State private var websiteFilter = ""
     @State private var showingRestoreConfirmation = false
-    @FocusState private var focusedField: FocusedField?
+    @State private var applicationSearchFocusRequested = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            scopeSummary
             selectionControl
+            scopeFootnote
 
             switch selection {
             case .applications:
@@ -76,8 +72,9 @@ struct ExclusionsSettingsPane: View {
         switch anchor {
         case .exclusionsApplications:
             selection = .applications
+            applicationSearchFocusRequested = false
             DispatchQueue.main.async {
-                focusedField = .applicationSearch
+                applicationSearchFocusRequested = true
             }
         case .exclusionsWebsites:
             selection = .websites
@@ -86,18 +83,14 @@ struct ExclusionsSettingsPane: View {
         }
     }
 
-    private var scopeSummary: some View {
-        SettingsCard {
-            SettingsCardRow(
-                icon: "hand.raised.fill",
-                iconColor: SLDesign.success,
-                title: "Protected before capture",
-                subtitle:
-                    "Excluded content is skipped before Screenlogger saves a new moment. Moments already in your Library are unchanged."
-            ) {
-                EmptyView()
-            }
-        }
+    private var scopeFootnote: some View {
+        Label(
+            "Exclusions apply before a new moment is saved. Existing Library moments are unchanged.",
+            systemImage: "hand.raised.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("How exclusions work")
         .accessibilityHint("Excluded content is skipped before a new moment is saved. Existing Library moments are unchanged.")
@@ -118,10 +111,13 @@ struct ExclusionsSettingsPane: View {
     }
 
     private var applicationSearch: some View {
-        TextField("Find an application", text: $applicationQuery)
-            .textFieldStyle(.roundedBorder)
-            .focused($focusedField, equals: .applicationSearch)
-            .accessibilityHint("Filters excluded and available applications")
-            .accessibilityIdentifier("exclusions.applications.search")
+        NativeFilterSearchField(
+            text: $applicationQuery,
+            placeholder: "Find an application",
+            accessibilityIdentifier: "exclusions.applications.search",
+            accessibilityHelp: "Filters excluded and available applications.",
+            focusRequested: $applicationSearchFocusRequested
+        )
+        .frame(height: 24)
     }
 }

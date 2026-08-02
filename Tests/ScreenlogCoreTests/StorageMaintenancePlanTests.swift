@@ -6,6 +6,32 @@ import XCTest
 /// Honest tests for StorageManagementMode to auto-compact/retention gating
 /// and CapturePreferenceStore UserDefaults round-trip (keys AppModel uses).
 final class StorageMaintenancePlanTests: XCTestCase {
+    func testCaptureQualityPresetsIncreaseFidelityAndUltraIsNative() {
+        XCTAssertEqual(CaptureQualityPreset.standard.maxDimension, 1_920)
+        XCTAssertEqual(CaptureQualityPreset.high.maxDimension, 2_880)
+        XCTAssertEqual(CaptureQualityPreset.ultra.maxDimension, 0)
+        XCTAssertLessThan(
+            CaptureQualityPreset.standard.stillCompressionQuality,
+            CaptureQualityPreset.high.stillCompressionQuality
+        )
+        XCTAssertLessThan(
+            CaptureQualityPreset.high.stillCompressionQuality,
+            CaptureQualityPreset.ultra.stillCompressionQuality
+        )
+    }
+
+    func testPreReleaseCaptureQualityValuesMigrateWithoutKeepingLowResolutionCaps() {
+        XCTAssertEqual(CaptureQualityPreset.migratedMaxDimension(720), 1_920)
+        XCTAssertEqual(CaptureQualityPreset.migratedMaxDimension(1_080), 2_880)
+        XCTAssertEqual(CaptureQualityPreset.migratedMaxDimension(1_440), 0)
+        XCTAssertEqual(CaptureQualityPreset.migratedMaxDimension(3_840), 3_840)
+
+        let suite = "screenlog.capture-quality-migration.test.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(1_440, forKey: CapturePreferenceStore.maxDimension)
+        XCTAssertEqual(CapturePreferenceStore.load(from: defaults).maxDimension, 0)
+    }
 
     // MARK: - Off / Compress / Limit gating
 
@@ -131,7 +157,7 @@ final class StorageMaintenancePlanTests: XCTestCase {
 
         var snap = CapturePreferenceStore.Snapshot(
             intervalSeconds: 3.5,
-            maxDimension: 1440,
+            maxDimension: 2_880,
             retentionDays: 45,
             storageCapMB: 8_000,
             storageMode: .compress,
@@ -143,7 +169,7 @@ final class StorageMaintenancePlanTests: XCTestCase {
 
         let loaded = CapturePreferenceStore.load(from: defaults)
         XCTAssertEqual(loaded.intervalSeconds, 3.5, accuracy: 0.001)
-        XCTAssertEqual(loaded.maxDimension, 1440)
+        XCTAssertEqual(loaded.maxDimension, 2_880)
         XCTAssertEqual(loaded.retentionDays, 45)
         XCTAssertEqual(loaded.storageCapMB, 8_000)
         XCTAssertEqual(loaded.storageMode, .compress)

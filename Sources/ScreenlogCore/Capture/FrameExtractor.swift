@@ -18,7 +18,9 @@ private let log = Logger(subsystem: "dev.screenlog", category: "frame-extract")
 public enum TimelinePreviewPolicy {
     public static let selectionDebounceMilliseconds = 45
     public static let neighborPrefetchDelayMilliseconds = 120
-    public static let selectedMaxPixelSize = 960
+    /// Covers Apple's 6K displays without stretching a low-resolution preview
+    /// across the Timeline stage. ImageIO still avoids decoding beyond source size.
+    public static let selectedMaxPixelSize = 6_144
     public static let neighborRadius = 1
 
     /// Indices whose selection would remain current long enough to start expensive work.
@@ -47,6 +49,8 @@ public enum TimelinePreviewPolicy {
 public enum FrameExtractor {
     /// Default frame duration written by compaction (1/2 second).
     public static let defaultFrameDuration = CMTime(value: 1, timescale: 2)
+    /// Avoid visibly compounding loss when a video-backed moment is exported.
+    public static let exportedStillQuality: CGFloat = 0.97
 
     public enum ExtractError: Error, CustomStringConvertible {
         case invalidIndex
@@ -110,7 +114,7 @@ public enum FrameExtractor {
         videoURL: URL,
         videoIndex: Int,
         frameDuration: CMTime = defaultFrameDuration,
-        quality: CGFloat = 0.85
+        quality: CGFloat = exportedStillQuality
     ) async throws -> (data: Data, fileExtension: String) {
         let image = try await cgImage(
             videoURL: videoURL,
@@ -188,7 +192,7 @@ public enum FrameExtractor {
     public static func stillData(
         forFrame frame: FrameRow,
         store: Store,
-        quality: CGFloat = 0.85
+        quality: CGFloat = exportedStillQuality
     ) async throws -> (data: Data, fileExtension: String, source: String) {
         if let path = frame.imagePath,
             FileManager.default.fileExists(atPath: path)
@@ -218,7 +222,7 @@ public enum FrameExtractor {
         forFrame frame: FrameRow,
         store: Store,
         to destination: URL,
-        quality: CGFloat = 0.85
+        quality: CGFloat = exportedStillQuality
     ) async throws -> URL {
         let still = try await stillData(forFrame: frame, store: store, quality: quality)
         let url: URL

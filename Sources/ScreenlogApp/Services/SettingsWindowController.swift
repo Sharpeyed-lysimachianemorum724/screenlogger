@@ -62,6 +62,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         win.titleVisibility = .visible
         win.titlebarAppearsTransparent = true
         win.titlebarSeparatorStyle = .automatic
+        win.toolbarStyle = .unified
         // The controller retains this window so close/reopen routes reuse the
         // same native Settings workspace and its selected pane.
         win.isReleasedWhenClosed = false

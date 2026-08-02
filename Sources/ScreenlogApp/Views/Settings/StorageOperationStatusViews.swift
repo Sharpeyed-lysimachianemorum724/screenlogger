@@ -33,7 +33,7 @@ struct LibraryExportStatusView: View {
             StorageResultStatus(
                 message: error.localizedDescription,
                 systemImage: "exclamationmark.triangle.fill",
-                color: .red,
+                color: SLDesign.error,
                 identifier: "storage.library-export.failed"
             ) {
                 Button("Try Again...") { model.chooseLibraryExportDestination() }
@@ -81,7 +81,7 @@ struct LibraryRestoreStatusView: View {
             StorageResultStatus(
                 message: error.localizedDescription,
                 systemImage: "exclamationmark.triangle.fill",
-                color: .red,
+                color: SLDesign.error,
                 identifier: "storage.library-restore.failed"
             ) {
                 Button("Choose Another Backup...") { model.chooseLibraryRestoreSource() }
@@ -124,7 +124,7 @@ struct StorageMaintenanceStatusView: View {
             StorageResultStatus(
                 message: failure.userMessage,
                 systemImage: "exclamationmark.triangle.fill",
-                color: .red,
+                color: SLDesign.error,
                 identifier: "settings.storage.maintenance.status"
             ) {
                 if failure.retryOperation != nil {
@@ -172,7 +172,7 @@ struct StorageDeletionStatusView: View {
             StorageResultStatus(
                 message: issue.message,
                 systemImage: "exclamationmark.triangle.fill",
-                color: .red,
+                color: SLDesign.error,
                 identifier: "library.deletion.issue.storage"
             ) {
                 if issue.canRetry {

@@ -44,6 +44,26 @@ private enum CaptureSetupDestination: Equatable {
     case none
 }
 
+private enum ScreenloggerRelaunch {
+    static func perform() {
+        let appPath = Bundle.main.bundleURL.path
+        let launcher = Process()
+        launcher.executableURL = URL(fileURLWithPath: "/bin/sh")
+        launcher.arguments = [
+            "-c",
+            "sleep 1; exec /usr/bin/open -n \"$1\"",
+            "screenlogger-relaunch",
+            appPath,
+        ]
+        do {
+            try launcher.run()
+            NSApp.terminate(nil)
+        } catch {
+            NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+        }
+    }
+}
+
 /// The exact retained surface state to restore after the temporary Setup detour.
 ///
 /// `CaptureSetupOrigin.timeline` identifies the visible surface, while
@@ -98,6 +118,7 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
     private var returnPath: CaptureSetupReturnPath?
     private var activeOrigin: CaptureSetupOrigin?
     private var preferredPermission: ScreenlogPermission?
+    private var companionPermission: ScreenlogPermission?
     private var refreshTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
 
@@ -170,11 +191,15 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
         window.titleVisibility = .visible
         window.titlebarSeparatorStyle = .automatic
         window.isReleasedWhenClosed = false
-        window.isMovableByWindowBackground = true
+        // Preserve first-click drag initiation on the app tile. The native
+        // titlebar remains draggable, so the content background does not need
+        // to compete with the cross-application drag gesture.
+        window.isMovableByWindowBackground = false
         window.backgroundColor = .windowBackgroundColor
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.level = .normal
-        window.minSize = NSSize(width: 460, height: 460)
+        window.hidesOnDeactivate = false
+        window.contentMinSize = NSSize(width: 460, height: 428)
         window.delegate = self
         window.contentViewController = makeContentController(
             model: model,
@@ -210,6 +235,7 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
         returnPath = nil
         activeOrigin = nil
         preferredPermission = nil
+        companionPermission = nil
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -219,8 +245,15 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
         // later for a revoked permission or a status check.
         let returningModel = model
         let destination = returnPath?.destination(after: .cancelled) ?? .none
-        if let model = returningModel, model.captureIntent == nil {
-            _ = model.keepCaptureOff()
+        if let model = returningModel {
+            if activeOrigin == .directFirstRun, model.firstRunValueProgress.isWaiting {
+                // Match Escape and the visible "Stop & Open Library" action.
+                // Closing Setup while the first value is still pending must
+                // not silently leave capture running.
+                _ = model.keepCaptureOff()
+            } else if model.captureIntent == nil {
+                _ = model.keepCaptureOff()
+            }
         }
         if activeOrigin == .directFirstRun {
             returningModel?.resetFirstRunValueProgress()
@@ -233,6 +266,7 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
         returnPath = nil
         activeOrigin = nil
         preferredPermission = nil
+        companionPermission = nil
         restore(destination, model: returningModel)
     }
 
@@ -272,18 +306,32 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
             onDone: { [weak self] in
                 self?.finish(.completed)
             },
-            onOpenScreen: {
-                #if DEBUG
-                    if AppUITestFixture.simulateSetupPermissionGrantIfRequested(on: model) {
-                        return
-                    }
-                #endif
+            onOpenScreen: { [weak self] in
                 model.requestScreenRecordingPermission()
+                if model.permissionSettingsResult?.opened == true {
+                    #if DEBUG
+                        if AppUITestFixture.simulateSetupPermissionGrantIfRequested(on: model) {
+                            return
+                        }
+                    #endif
+                    self?.presentAlongsideSystemSettings(for: .screenRecording)
+                }
             },
-            onOpenAccessibility: { model.requestAccessibilityPermission() },
+            onOpenAccessibility: { [weak self] in
+                model.requestAccessibilityPermission()
+                if model.permissionSettingsResult?.opened == true {
+                    #if DEBUG
+                        if AppUITestFixture.simulateSetupPermissionGrantIfRequested(on: model) {
+                            return
+                        }
+                    #endif
+                    self?.presentAlongsideSystemSettings(for: .accessibility)
+                }
+            },
             onRefresh: {
                 Task { await model.refreshPermissions(force: true) }
-            }
+            },
+            onRelaunch: ScreenloggerRelaunch.perform
         )
         .environmentObject(model)
         return NSHostingController(rootView: content)
@@ -312,6 +360,7 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
                 // Appearance must never trigger a permission request. The
                 // prompt-free preflight is sufficient for setup status.
                 await model.refreshPermissions(force: false)
+                self.reconcileSystemSettingsCompanion()
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
@@ -327,6 +376,7 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
             Task { @MainActor [weak self] in
                 guard let model = self?.model else { return }
                 await model.refreshPermissions(force: false)
+                self?.reconcileSystemSettingsCompanion()
             }
         }
     }
@@ -336,6 +386,32 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
             NotificationCenter.default.removeObserver(activationObserver)
             self.activationObserver = nil
         }
+    }
+
+    /// Keep the drag source reachable while System Settings is frontmost.
+    /// This mode is entered only after a direct user action and is removed as
+    /// soon as the selected permission is granted or Setup closes.
+    private func presentAlongsideSystemSettings(for permission: ScreenlogPermission) {
+        companionPermission = permission
+        guard let window else { return }
+        window.level = .floating
+        window.hidesOnDeactivate = false
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self, weak window] in
+            guard let self, let window,
+                self.companionPermission == permission,
+                self.model?.permissions.isGranted(permission) != true
+            else { return }
+            window.orderFrontRegardless()
+        }
+    }
+
+    private func reconcileSystemSettingsCompanion() {
+        guard let permission = companionPermission,
+            model?.permissions.isGranted(permission) == true
+        else { return }
+        companionPermission = nil
+        window?.level = .normal
     }
 
     private func positionOnVisibleScreen(_ window: NSWindow) {

@@ -51,6 +51,15 @@ extension HistoryPane {
     }
 
     private var timelineControlBar: some View {
+        ViewThatFits(in: .horizontal) {
+            expandedTimelineControlBar
+                .fixedSize(horizontal: true, vertical: false)
+            compactTimelineControlBar
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var expandedTimelineControlBar: some View {
         HStack(spacing: 6) {
             Button {
                 model.stopReplay()
@@ -263,6 +272,199 @@ extension HistoryPane {
             .help("Copy, open, or delete this moment")
             .accessibilityLabel("Moment Actions")
             .accessibilityHint("Copy, open, or delete the selected moment")
+            .accessibilityIdentifier("timeline.moment.actions")
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.white.opacity(controlStrokeOpacity), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.2), radius: 10, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Timeline controls")
+    }
+
+    /// At compact widths, keep playback immediate and move less-frequent
+    /// inspection tools into one predictable overflow menu.
+    private var compactTimelineControlBar: some View {
+        HStack(spacing: 6) {
+            Button {
+                model.stopReplay()
+                model.stepTimeline(by: -1)
+            } label: {
+                Label("Previous moment", systemImage: "backward.frame.fill")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 28, height: 28)
+            }
+            .disabled(!model.canStepBack)
+            .help(shortcutHelp("Previous moment", actionID: .timelinePreviousMoment))
+            .accessibilityIdentifier("timeline.playback.previous")
+
+            Button {
+                TimelinePlaybackControl.toggle(model)
+            } label: {
+                Image(systemName: model.isReplaying ? "pause.fill" : "play.fill")
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .accessibilityHidden(true)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.circle)
+            .tint(model.accentSwiftUIColor)
+            .disabled(model.timeline.count < 2)
+            .help(
+                shortcutHelp(
+                    model.isReplaying ? "Pause replay" : "Play through moments",
+                    actionID: .timelineToggleReplay
+                )
+            )
+            .accessibilityLabel(
+                model.isReplaying ? "Pause replay" : "Play through moments"
+            )
+            .accessibilityIdentifier("timeline.playback.toggle")
+
+            Button {
+                model.stopReplay()
+                model.stepTimeline(by: 1)
+            } label: {
+                Label("Next moment", systemImage: "forward.frame.fill")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 28, height: 28)
+            }
+            .disabled(!model.canStepForward)
+            .help(shortcutHelp("Next moment", actionID: .timelineNextMoment))
+            .accessibilityIdentifier("timeline.playback.next")
+
+            controlDivider
+
+            Menu {
+                if model.showSegmentNavigation {
+                    let availability = segmentNavigationAvailability
+                    Button {
+                        model.stopReplay()
+                        model.stepSegment(by: -1)
+                    } label: {
+                        Label("Previous Activity", systemImage: "backward.end.fill")
+                    }
+                    .disabled(!availability.previous)
+                    .accessibilityIdentifier("timeline.segment.previous")
+
+                    Button {
+                        model.stopReplay()
+                        model.stepSegment(by: 1)
+                    } label: {
+                        Label("Next Activity", systemImage: "forward.end.fill")
+                    }
+                    .disabled(!availability.next)
+                    .accessibilityIdentifier("timeline.segment.next")
+                }
+
+                if model.showZoomControls {
+                    Divider()
+
+                    Button {
+                        model.zoomStage(by: 1 / 1.25)
+                    } label: {
+                        Label("Zoom Out", systemImage: "minus.magnifyingglass")
+                    }
+                    .disabled(model.selectedFrameImage == nil || model.stageZoom <= 0.5)
+                    .accessibilityIdentifier("timeline.zoom.out")
+
+                    Button {
+                        model.resetStageZoom()
+                    } label: {
+                        Label(
+                            "Reset Zoom (\(Int(model.stageZoom * 100))%)",
+                            systemImage: "arrow.counterclockwise"
+                        )
+                    }
+                    .disabled(model.selectedFrameImage == nil || model.stageZoom == 1)
+                    .accessibilityIdentifier("timeline.zoom.reset")
+
+                    Button {
+                        model.zoomStage(by: 1.25)
+                    } label: {
+                        Label("Zoom In", systemImage: "plus.magnifyingglass")
+                    }
+                    .disabled(model.selectedFrameImage == nil || model.stageZoom >= 4)
+                    .accessibilityIdentifier("timeline.zoom.in")
+                }
+
+                Divider()
+
+                Button {
+                    model.showLiveText.toggle()
+                } label: {
+                    Label(
+                        model.showLiveText ? "Hide Detected Text" : "Show Detected Text",
+                        systemImage: "text.viewfinder"
+                    )
+                }
+                .disabled(!hasSelectedOCRBoxes)
+                .accessibilityIdentifier("timeline.live-text")
+
+                Divider()
+
+                Button {
+                    model.copySelectedFrameImage()
+                } label: {
+                    Label("Copy Image", systemImage: "photo.on.rectangle.angled")
+                }
+                .disabled(!model.canCopySelectedFrameImage)
+                .accessibilityIdentifier("timeline.moment.actions.copy-image")
+
+                Button {
+                    model.copySelectedOCRText()
+                } label: {
+                    Label("Copy Text", systemImage: "doc.on.doc")
+                }
+                .disabled(!model.canCopySelectedOCRText)
+                .accessibilityIdentifier("timeline.moment.actions.copy-text")
+
+                if model.showOpenExternally {
+                    Button {
+                        model.openSelectedExternally()
+                    } label: {
+                        Label("Open Source", systemImage: "arrow.up.forward.app")
+                    }
+                    .disabled(!model.canOpenSelectedExternally)
+                    .accessibilityIdentifier("timeline.moment.actions.open-source")
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    guard let frame = model.selectedTimelineFrame else { return }
+                    Task {
+                        await model.prepareLibraryDeletion(
+                            .moment(frameID: frame.id),
+                            origin: .timeline,
+                            title: "Delete This Moment?",
+                            detail: "\(frame.appLabel) at \(SLTimeFormat.full(frame.timestampMs))."
+                        )
+                    }
+                } label: {
+                    Label("Delete Moment...", systemImage: "trash")
+                }
+                .disabled(model.selectedTimelineFrame == nil)
+                .accessibilityIdentifier("timeline.moment.actions.delete")
+            } label: {
+                Label("More Timeline Actions", systemImage: "ellipsis.circle")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 28, height: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Activity, zoom, text, and moment actions")
+            .accessibilityLabel("More Timeline Actions")
             .accessibilityIdentifier("timeline.moment.actions")
         }
         .buttonStyle(.borderless)
@@ -540,7 +742,7 @@ extension HistoryPane {
 
     private var timelineRangeLabel: String {
         if let session = model.selectedSession {
-            return "Session  |  \(SLTimeFormat.shortTime(session.startMs))"
+            return "Session at \(SLTimeFormat.shortTime(session.startMs))"
         }
         return model.selectedTimelineFrame.map { momentDateLabel($0.timestampMs) } ?? "Choose Day"
     }

@@ -11,33 +11,29 @@ struct SupportSettingsPane: View {
     @State private var showingVersionDetails = false
     @ObservedObject private var updates = AppUpdateController.shared
 
-    let openPrivacy: () -> Void
-
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsChrome.cardSpacing) {
             SettingsCard(padding: 0) {
-                SettingsCardRow(
-                    icon: "book",
-                    title: "Screenlogger Guide",
-                    subtitle: "Practical setup, privacy, and recovery help-built in and available offline."
-                ) {
-                    Button {
-                        showingUserGuide = true
-                    } label: {
-                        Label("Open Guide", systemImage: "arrow.right")
-                    }
-                    .controlSize(.small)
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityHint("Open the offline Screenlogger user guide")
-                    .accessibilityIdentifier("settings.support.user-guide")
-                }
-                .padding(14)
-                .accessibilityIdentifier("settings.support.guide-summary")
-            }
-            .settingsDestinationAnchor(.supportGuide)
-
-            SettingsCard(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
+                    SettingsCardRow(
+                        icon: "book",
+                        title: "Screenlogger Guide",
+                        subtitle: "Practical setup, privacy, and recovery help, built in and available offline."
+                    ) {
+                        Button {
+                            showingUserGuide = true
+                        } label: {
+                            Label("Open Guide", systemImage: "arrow.right")
+                        }
+                        .controlSize(.small)
+                        .accessibilityHint("Open the offline Screenlogger user guide")
+                        .accessibilityIdentifier("settings.support.user-guide")
+                    }
+                    .padding(14)
+                    .accessibilityIdentifier("settings.support.guide-summary")
+
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
+
                     SettingsCardRow(
                         icon: "stethoscope",
                         title: diagnosticsTitle,
@@ -56,7 +52,7 @@ struct SupportSettingsPane: View {
                     .padding(14)
                     .accessibilityIdentifier("settings.diagnostics.summary")
 
-                    Divider().padding(.leading, 58)
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                     DisclosureGroup(isExpanded: $showingDiagnosticsContents) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -88,24 +84,8 @@ struct SupportSettingsPane: View {
                         .padding(.bottom, diagnosticsStatusIsVisible ? 14 : 0)
                 }
             }
+            .settingsDestinationAnchor(.supportGuide)
             .settingsDestinationAnchor(.supportDiagnostics)
-
-            SettingsCard(padding: 0) {
-                VStack(spacing: 0) {
-                    SettingsCardRow(
-                        icon: "hand.raised",
-                        title: "Permissions & Privacy",
-                        subtitle: "Review access, data choices, and recent capture health."
-                    ) {
-                        Button("Review...", action: openPrivacy)
-                            .controlSize(.small)
-                            .accessibilityLabel("Review Permissions & Privacy")
-                            .accessibilityHint("Open Privacy settings")
-                            .accessibilityIdentifier("settings.support.review-privacy")
-                    }
-                    .padding(14)
-                }
-            }
 
             SettingsCard(padding: 0) {
                 VStack(spacing: 0) {
@@ -124,7 +104,7 @@ struct SupportSettingsPane: View {
                     }
                     .padding(14)
 
-                    Divider().padding(.leading, 58)
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                     SettingsCardRow(
                         icon: "clock.arrow.circlepath",
@@ -160,13 +140,13 @@ struct SupportSettingsPane: View {
             SettingsCard(padding: 0) {
                 DisclosureGroup(isExpanded: $showingVersionDetails) {
                     VStack(spacing: 0) {
-                        Divider().padding(.leading, 44)
+                        Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                         versionRow(
                             title: "App version and build",
                             value: appVersionString,
                             identifier: "settings.support.app-version"
                         )
-                        Divider().padding(.leading, 44)
+                        Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                         versionRow(
                             title: "Capture and search engine",
                             value: ScreenlogCore.version,
@@ -190,8 +170,10 @@ struct SupportSettingsPane: View {
             }
         }
         .sheet(isPresented: $showingUserGuide) {
-            SupportUserGuideSheet()
-                .environmentObject(model)
+            SupportUserGuideSheet {
+                showingUserGuide = false
+            }
+            .environmentObject(model)
         }
         .onReceive(model.$userGuidePresentationRequest.compactMap { $0 }) { requestID in
             showingUserGuide = true

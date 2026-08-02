@@ -7,10 +7,17 @@ import ServiceManagement
 @MainActor
 extension AppModel {
     func applyAppearancePreference() {
+        let increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         switch appearancePreference {
         case .system: NSApp.appearance = nil
-        case .light: NSApp.appearance = NSAppearance(named: .aqua)
-        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        case .light:
+            NSApp.appearance = NSAppearance(
+                named: increasedContrast ? .accessibilityHighContrastAqua : .aqua
+            )
+        case .dark:
+            NSApp.appearance = NSAppearance(
+                named: increasedContrast ? .accessibilityHighContrastDarkAqua : .darkAqua
+            )
         }
     }
 

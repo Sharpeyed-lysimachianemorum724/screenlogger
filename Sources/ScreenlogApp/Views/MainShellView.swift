@@ -53,6 +53,7 @@ struct MainShellView: View {
             minWidth: SLDesign.workspaceMinimumWidth,
             minHeight: SLDesign.workspaceMinimumHeight
         )
+        .tint(model.accentSwiftUIColor)
         .background(Color.black)
         .onAppear {
             model.shellSearchMode = false
@@ -150,19 +151,13 @@ struct TimelineToolbarContextView: View {
         // An explicit semantic foreground keeps their labels legible on both
         // light titlebars and dark edge-to-edge Timeline content.
         .foregroundStyle(.primary)
+        .tint(model.accentSwiftUIColor)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("timeline.chrome.top")
     }
 
     private func contextContent<Moment: View>(moment: Moment) -> some View {
         HStack(spacing: 12) {
-            if offersLibraryReturn {
-                backToLibraryButton
-
-                Divider()
-                    .frame(height: 18)
-            }
-
             locationLabel
 
             Divider()
@@ -170,23 +165,6 @@ struct TimelineToolbarContextView: View {
 
             moment
         }
-    }
-
-    private var offersLibraryReturn: Bool {
-        model.timelineNavigationOrigin == .libraryResult
-    }
-
-    private var backToLibraryButton: some View {
-        Button {
-            model.returnToLibrary()
-        } label: {
-            Label("Back to Library", systemImage: "chevron.left")
-                .labelStyle(.titleAndIcon)
-        }
-        .buttonStyle(.borderless)
-        .help("Return to your Library search and filters")
-        .accessibilityHint("Reopens the Library with your search and filters preserved")
-        .accessibilityIdentifier("navigation.timeline.back-to-search")
     }
 
     private var locationLabel: some View {
@@ -208,8 +186,9 @@ struct TimelineToolbarContextView: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.primary)
                         if let domain = frame.domain, !domain.isEmpty {
-                            Text(" | ")
-                                .foregroundStyle(.tertiary)
+                            Divider()
+                                .frame(height: 11)
+                                .accessibilityHidden(true)
                             Text(domain)
                                 .foregroundStyle(.secondary)
                         }
@@ -279,7 +258,8 @@ struct TimelineToolbarContextView: View {
     }
 }
 
-/// Capture state and primary destinations hosted in the native toolbar.
+/// Capture state hosted in the native toolbar. Window destinations are
+/// separate AppKit toolbar items so their order and hit targets stay stable.
 struct TimelineToolbarActionsView: View {
     @EnvironmentObject private var model: AppModel
 
@@ -292,31 +272,22 @@ struct TimelineToolbarActionsView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("timeline.chrome.toolbar-actions")
+        .tint(model.accentSwiftUIColor)
     }
 
     private var expandedActions: some View {
-        HStack(spacing: 10) {
-            SLCaptureStatusToolbarView(
-                setupOrigin: .timeline,
-                accessibilityIdentifier: "timeline.capture.status"
-            )
-            .labelStyle(.titleAndIcon)
-            SLPrimaryNavigation(current: .timeline)
-                .labelStyle(.titleAndIcon)
-                .foregroundStyle(.primary)
-        }
+        SLCaptureStatusToolbarView(
+            setupOrigin: .timeline,
+            accessibilityIdentifier: "timeline.capture.status"
+        )
+        .labelStyle(.titleAndIcon)
     }
 
     private var compactActions: some View {
-        HStack(spacing: 10) {
-            SLCaptureStatusToolbarView(
-                setupOrigin: .timeline,
-                accessibilityIdentifier: "timeline.capture.status"
-            )
-            .labelStyle(.iconOnly)
-            SLPrimaryNavigation(current: .timeline)
-                .labelStyle(.iconOnly)
-                .foregroundStyle(.primary)
-        }
+        SLCaptureStatusToolbarView(
+            setupOrigin: .timeline,
+            accessibilityIdentifier: "timeline.capture.status"
+        )
+        .labelStyle(.iconOnly)
     }
 }

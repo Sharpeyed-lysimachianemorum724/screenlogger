@@ -35,7 +35,7 @@ struct CaptureTimingSettingsSection: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 14)
 
-                Divider().padding(.leading, 52)
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                 SettingsCardRow(
                     icon: "moon.zzz",
@@ -95,7 +95,7 @@ struct CaptureImageSettingsSection: View {
                 DisclosureGroup("Advanced image options", isExpanded: $showsAdvancedOptions) {
                     VStack(alignment: .leading, spacing: 10) {
                         LabeledContent("Maximum image edge") {
-                            Text("\(model.maxDimension) pixels")
+                            Text(maximumImageEdgeLabel)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
@@ -128,10 +128,17 @@ struct CaptureImageSettingsSection: View {
 
     private var qualityHelp: String {
         switch model.quality {
-        case .p720: return "Standard uses the least storage and works well for text search."
-        case .p1080: return "High keeps more visual detail with moderate storage use."
-        case .p1440: return "Ultra keeps the most detail and uses the most storage."
+        case .standard: return "Standard keeps clear text while using less storage."
+        case .high: return "High preserves Retina detail with moderate storage use."
+        case .ultra: return "Ultra saves the display at native resolution with minimal compression."
         }
+    }
+
+    private var maximumImageEdgeLabel: String {
+        if model.maxDimension == CaptureQuality.nativeResolutionMaxDimension {
+            return "Native display resolution"
+        }
+        return "\(model.maxDimension) pixels"
     }
 }
 

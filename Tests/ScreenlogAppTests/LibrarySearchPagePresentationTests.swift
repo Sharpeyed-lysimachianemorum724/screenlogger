@@ -111,25 +111,4 @@ final class LibrarySearchPagePresentationTests: XCTestCase {
             "80+ results"
         )
     }
-
-    func testOnlyEditorOwnedQueryChangesEnterTheDebouncePath() {
-        XCTAssertTrue(
-            LibrarySearchQueryChangeRouting.shouldScheduleDebouncedSearch(
-                changedQuery: "design review",
-                lastEditorWrittenQuery: "design review"
-            )
-        )
-        XCTAssertFalse(
-            LibrarySearchQueryChangeRouting.shouldScheduleDebouncedSearch(
-                changedQuery: "app:Safari",
-                lastEditorWrittenQuery: nil
-            )
-        )
-        XCTAssertFalse(
-            LibrarySearchQueryChangeRouting.shouldScheduleDebouncedSearch(
-                changedQuery: "app:Safari",
-                lastEditorWrittenQuery: "old editor text"
-            )
-        )
-    }
 }

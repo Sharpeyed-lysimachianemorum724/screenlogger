@@ -16,8 +16,8 @@ struct LibraryResultProvenance: View {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 6) {
                         applicationIdentity
-                        Text(" | ")
-                            .foregroundStyle(.tertiary)
+                        Divider()
+                            .frame(height: iconSize)
                             .accessibilityHidden(true)
                         websiteIdentity(domain)
                     }
@@ -186,14 +186,14 @@ struct SearchResultCard: View {
 
     private var cardHelp: String {
         guard interactionEnabled else {
-            return "Previous result  |  Available when the current search finishes"
+            return "Previous result. Available when the current search finishes."
         }
         if keyboardFocused && selected {
-            return "Selected for keyboard navigation  |  Return opens in Timeline"
+            return "Selected for keyboard navigation. Return opens in Timeline."
         }
         return selected
-            ? "Selected for Preview  |  Double-click to open"
-            : "Select for Preview  |  Double-click to open"
+            ? "Selected for Preview. Double-click to open."
+            : "Select for Preview. Double-click to open."
     }
 
     private var accessibilityHint: String {

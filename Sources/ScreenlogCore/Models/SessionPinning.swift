@@ -114,18 +114,18 @@ public enum SessionPinning: Sendable {
             return frames
         }
         if durationSec < 60 {
-            return "\(durationSec)s  |  \(frames)"
+            return "\(durationSec)s, \(frames)"
         }
         let minutes = durationSec / 60
         if minutes < 60 {
             let rem = durationSec % 60
-            if rem == 0 { return "\(minutes)m  |  \(frames)" }
-            return "\(minutes)m \(rem)s  |  \(frames)"
+            if rem == 0 { return "\(minutes)m, \(frames)" }
+            return "\(minutes)m \(rem)s, \(frames)"
         }
         let hours = minutes / 60
         let remMin = minutes % 60
-        if remMin == 0 { return "\(hours)h  |  \(frames)" }
-        return "\(hours)h \(remMin)m  |  \(frames)"
+        if remMin == 0 { return "\(hours)h, \(frames)" }
+        return "\(hours)h \(remMin)m, \(frames)"
     }
 
     public static func summaryLabel(for session: SessionRow) -> String {

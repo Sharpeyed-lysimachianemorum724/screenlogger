@@ -220,6 +220,7 @@ extension HistoryPane {
         ZStack {
             Image(nsImage: img)
                 .resizable()
+                .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
                 .scaleEffect(model.stageZoom)
                 .offset(panOffset)

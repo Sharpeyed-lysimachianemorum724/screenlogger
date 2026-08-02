@@ -147,7 +147,12 @@ struct SearchPane: View {
                     .accessibilityIdentifier("library.results.update-error")
                 }
                 resultsList(
-                    columnCount: gridColumnCount(forResultsWidth: resultsGeometry.size.width)
+                    columnCount: gridColumnCount(
+                        forResultsWidth: max(
+                            0,
+                            resultsGeometry.size.width - (resultsContentHorizontalInset * 2)
+                        )
+                    )
                 )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -166,6 +171,7 @@ struct SearchPane: View {
     private var inspectorMinimumWidth: CGFloat { 270 }
     private var inspectorIdealWidth: CGFloat { 300 }
     private var inspectorMaximumWidth: CGFloat { 420 }
+    private var resultsContentHorizontalInset: CGFloat { 12 }
     private var minimumCardWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 280 : 220 }
 
     private func showsInspector(totalWidth: CGFloat) -> Bool {
@@ -188,18 +194,22 @@ struct SearchPane: View {
     }
 
     private func resultsHeader(compactFilters: Bool, persistentInspector: Bool) -> some View {
-        HStack(spacing: 8) {
-            Text(
-                model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    && !model.hasActiveLibrarySearchFilters
-                    ? "Search" : "Results"
-            )
-            .font(.headline)
-            .accessibilityIdentifier("library.results.title")
+        let hasNoCriteria =
+            model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !model.hasActiveLibrarySearchFilters
+        let title = hasNoCriteria ? "Search" : "Results"
+        return HStack(spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier("library.results.title")
             if !model.filteredSearchResults.isEmpty {
                 Text(resultCountLabel)
-                    .font(.caption.monospacedDigit())
+                    .font(.caption2.weight(.medium).monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.quaternary.opacity(0.45), in: Capsule(style: .continuous))
             }
             Spacer()
             if model.isSearching, !model.filteredSearchResults.isEmpty {
@@ -212,12 +222,15 @@ struct SearchPane: View {
                 !compactFilters,
                 !dynamicTypeSize.isAccessibilitySize
             {
-                Text("Arrow keys to browse   |   Return to open   |   Esc to search")
+                Text("Use the arrow keys to browse. Return opens. Escape returns to search.")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.tertiary)
             }
 
-            if let selectedResult {
+            if let selectedResult,
+                !persistentInspector
+                    || !model.libraryWorkspaceNavigation.inspectorPanePresented
+            {
                 Button {
                     openResult(selectedResult)
                 } label: {
@@ -328,7 +341,14 @@ struct SearchPane: View {
                         },
                         set: { isPresented in
                             compactPreviewPopoverActive = isPresented
-                            model.libraryWorkspaceNavigation.compactPreviewPresented = isPresented
+                            // AppKit dismisses the retained Library popover as
+                            // its window yields to Timeline. That transient
+                            // dismissal must not erase the user's preview
+                            // preference before they return to the Library.
+                            if model.shellSearchMode {
+                                model.libraryWorkspaceNavigation.compactPreviewPresented =
+                                    isPresented
+                            }
                         }
                     ),
                     arrowEdge: .top
@@ -345,6 +365,7 @@ struct SearchPane: View {
             }
         }
         .frame(minHeight: 24)
+        .padding(.horizontal, resultsContentHorizontalInset)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Search results")
         .accessibilityValue(resultCountLabel)
@@ -419,7 +440,7 @@ struct SearchPane: View {
                             .id(result.frameID)
                         }
                     }
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, resultsContentHorizontalInset)
                     .padding(.bottom, 20)
 
                     if model.canLoadMoreLibrarySearchResults {

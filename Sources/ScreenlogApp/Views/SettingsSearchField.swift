@@ -109,3 +109,61 @@ struct SettingsSearchField: NSViewRepresentable {
         }
     }
 }
+
+/// Stock AppKit search field for in-page filtering. Keeping this separate from
+/// ordinary text entry makes "add" and "find" actions visually unmistakable.
+struct NativeFilterSearchField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let accessibilityIdentifier: String
+    var accessibilityHelp: String? = nil
+    var focusRequested: Binding<Bool>? = nil
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = placeholder
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.delegate = context.coordinator
+        field.setAccessibilityIdentifier(accessibilityIdentifier)
+        if let accessibilityHelp {
+            field.setAccessibilityHelp(accessibilityHelp)
+        }
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text {
+            field.stringValue = text
+        }
+        if focusRequested?.wrappedValue == true,
+            field.window?.firstResponder !== field.currentEditor()
+        {
+            DispatchQueue.main.async {
+                field.window?.makeFirstResponder(field)
+                field.selectText(nil)
+                focusRequested?.wrappedValue = false
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var parent: NativeFilterSearchField
+
+        init(parent: NativeFilterSearchField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSSearchField,
+                parent.text != field.stringValue
+            else { return }
+            parent.text = field.stringValue
+        }
+    }
+}

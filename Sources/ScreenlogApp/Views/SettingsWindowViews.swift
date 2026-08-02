@@ -105,9 +105,36 @@ struct SettingsView: View {
                 .environment(\.settingsDestinationFocusRequest, destinationFocusRequest)
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 760, idealWidth: 860, minHeight: 500, idealHeight: 600)
+        .frame(
+            minWidth: SettingsWindowLayout.minimumContentSize.width,
+            idealWidth: SettingsWindowLayout.defaultContentSize.width,
+            minHeight: SettingsWindowLayout.minimumContentSize.height,
+            idealHeight: SettingsWindowLayout.defaultContentSize.height
+        )
         .tint(model.accentSwiftUIColor)
-        .preferredColorScheme(model.appearancePreference == .light ? .light : model.appearancePreference == .dark ? .dark : nil)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    model.openSearchWindow()
+                } label: {
+                    Label("Library", systemImage: "books.vertical")
+                }
+                .labelStyle(.iconOnly)
+                .help("Show Library")
+                .accessibilityLabel("Show Library")
+                .accessibilityIdentifier("navigation.settings.library")
+
+                Button {
+                    model.openMainShell(origin: .direct)
+                } label: {
+                    Label("Timeline", systemImage: "clock")
+                }
+                .labelStyle(.iconOnly)
+                .help("Show Timeline")
+                .accessibilityLabel("Show Timeline")
+                .accessibilityIdentifier("navigation.settings.timeline")
+            }
+        }
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil }
         }
@@ -142,24 +169,30 @@ struct SettingsView: View {
                         .font(.title3.weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 0)
-                    SLPrimaryNavigation(current: .settings)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
                 Divider()
 
-                ContentUnavailableView {
-                    Label("No Settings Found", systemImage: "magnifyingglass")
-                } description: {
+                VStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 32, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("No Settings Found")
+                        .font(.title3.weight(.semibold))
                     Text("Try a different word or clear the Settings search.")
-                } actions: {
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                     Button("Clear Search") {
                         searchQuery = ""
                     }
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("settings.search.clear")
                 }
+                .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityElement(children: .contain)
                 .accessibilityLabel("No settings found for \(normalizedSearchQuery)")
                 .accessibilityIdentifier("settings.search.empty")
             }
@@ -167,9 +200,7 @@ struct SettingsView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         } else {
             VStack(spacing: 0) {
-                SettingsPaneHeader(item: model.settingsSelection) {
-                    SLPrimaryNavigation(current: .settings)
-                }
+                SettingsPaneHeader(item: model.settingsSelection)
                 Divider()
                 detailScroll
             }
@@ -189,17 +220,13 @@ struct SettingsView: View {
                     case .capture: CaptureSettingsPane()
                     case .privacy:
                         PrivacySettingsPane(
-                            openCapture: { navigate(to: .captureTiming) },
                             openExclusions: { navigate(to: .exclusionsApplications) },
                             openStorage: { navigate(to: .storageManagement) }
                         )
                     case .storage: StorageSettingsPane()
                     case .exclusions: ExclusionsSettingsPane()
                     case .integrations: IntegrationsSettingsPane()
-                    case .support:
-                        SupportSettingsPane(
-                            openPrivacy: { navigate(to: .privacyPermissions) }
-                        )
+                    case .support: SupportSettingsPane()
                     }
                 }
                 .padding(24)
@@ -447,43 +474,15 @@ private struct SettingsSidebarCaptureState: View {
     }
 }
 
-private struct SettingsPaneHeader<Trailing: View>: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
+private struct SettingsPaneHeader: View {
     let item: SettingsSidebarItem
-    @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                stackedContent
-            } else {
-                ViewThatFits(in: .horizontal) {
-                    horizontalContent
-                    stackedContent
-                }
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("settings.pane.\(item.rawValue)")
-    }
-
-    private var horizontalContent: some View {
-        HStack(alignment: .center, spacing: 10) {
-            identity
-            Spacer(minLength: 8)
-            trailing()
-        }
-    }
-
-    private var stackedContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            identity
-            trailing()
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
+        identity
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("settings.pane.\(item.rawValue)")
     }
 
     private var identity: some View {
@@ -518,6 +517,7 @@ enum SettingsChrome {
     static let iconSize: CGFloat = 24
     static let cardSpacing: CGFloat = 12
     static let sectionSpacing: CGFloat = 20
+    static let rowSeparatorInset: CGFloat = 50
 
     static func cardFill(_ scheme: ColorScheme) -> Color {
         Color(nsColor: .controlBackgroundColor)
@@ -572,11 +572,13 @@ private struct SettingsDestinationAnchorModifier: ViewModifier {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay {
+        .overlay(alignment: .leading) {
             if highlightedAnchor == anchor {
-                RoundedRectangle(cornerRadius: SettingsChrome.cardRadius + 2, style: .continuous)
-                    .stroke(model.accentSwiftUIColor.opacity(0.9), lineWidth: 2)
-                    .padding(-4)
+                Capsule(style: .continuous)
+                    .fill(model.accentSwiftUIColor)
+                    .frame(width: 3)
+                    .padding(.vertical, 4)
+                    .offset(x: -10)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -655,7 +657,7 @@ struct SettingsCard<Content: View>: View {
     var body: some View {
         GroupBox {
             content()
-                .padding(padding == 0 ? 0 : 4)
+                .padding(padding)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .groupBoxStyle(.automatic)
@@ -711,11 +713,11 @@ struct SettingsCardRow<Trailing: View>: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -37,9 +37,8 @@ private actor CapturePipeline {
     private var exclusions: ExclusionStore = .shared
     private var dataRoot: URL?
 
-    var maxDimension: Int = 1920 {
-        didSet { capture.maxDimension = maxDimension }
-    }
+    var maxDimension: Int = 2_880
+    var stillQuality: Double = 0.94
     var captureAXTree = true
     var captureBrowserURL = true
     var useDifferentialOCR = true
@@ -60,6 +59,7 @@ private actor CapturePipeline {
         exclusions: ExclusionStore,
         dataRoot: URL?,
         maxDimension: Int,
+        stillQuality: Double,
         captureAXTree: Bool? = nil,
         captureBrowserURL: Bool? = nil,
         useDifferentialOCR: Bool? = nil,
@@ -70,6 +70,8 @@ private actor CapturePipeline {
         self.dataRoot = dataRoot
         self.maxDimension = maxDimension
         capture.maxDimension = maxDimension
+        self.stillQuality = min(1, max(0, stillQuality))
+        capture.stillQuality = self.stillQuality
         if let captureAXTree { self.captureAXTree = captureAXTree }
         if let captureBrowserURL { self.captureBrowserURL = captureBrowserURL }
         if let useDifferentialOCR { self.useDifferentialOCR = useDifferentialOCR }
@@ -84,9 +86,11 @@ private actor CapturePipeline {
         pauseWhenBrowserAddressUnavailable = value
     }
 
-    func applyMaxDimension(_ value: Int) {
-        maxDimension = value
-        capture.maxDimension = value
+    func applyCaptureQuality(maxDimension: Int, stillQuality: Double) {
+        self.maxDimension = maxDimension
+        capture.maxDimension = maxDimension
+        self.stillQuality = min(1, max(0, stillQuality))
+        capture.stillQuality = self.stillQuality
     }
 
     func setCaptureAXTree(_ value: Bool) { captureAXTree = value }
@@ -299,13 +303,8 @@ public final class RecordingEngine: ObservableObject {
     @Published public private(set) var pauseReason: CapturePauseReason?
 
     public var intervalSeconds: TimeInterval = 2.0
-    public var maxDimension: Int = 1920 {
-        didSet {
-            // Propagate to pipeline without blocking UI.
-            let value = maxDimension
-            Task { await pipeline.applyMaxDimension(value) }
-        }
-    }
+    public private(set) var maxDimension: Int = 2_880
+    public private(set) var stillQuality: Double = 0.94
     public var retentionDays: Int = 30
     /// Soft cap on compacted video size (MB). 0 = disabled. Default 50 GB.
     public var storageCapMB: Int64 = 50_000
@@ -379,13 +378,19 @@ public final class RecordingEngine: ObservableObject {
         let root = self.dataRoot
         let excl = self.exclusions
         let dim = maxDimension
+        let quality = stillQuality
         let ax = captureAXTree
         let browser = captureBrowserURL
         let diff = useDifferentialOCR
         let jpeg = preferJPEGStill
         let langs = ocrLanguages
         Task {
-            await pipeline.configure(exclusions: excl, dataRoot: root, maxDimension: dim)
+            await pipeline.configure(
+                exclusions: excl,
+                dataRoot: root,
+                maxDimension: dim,
+                stillQuality: quality
+            )
             await pipeline.applyCaptureFlags(ax: ax, browserURL: browser, differentialOCR: diff)
             await pipeline.applySnapshotPrefs(
                 preferJPEG: jpeg,
@@ -420,6 +425,7 @@ public final class RecordingEngine: ObservableObject {
     public func applySettings(
         intervalSeconds: TimeInterval,
         maxDimension: Int,
+        stillQuality: Double = 0.94,
         retentionDays: Int,
         storageCapMB: Int64 = 50_000,
         autoCompactEnabled: Bool = true,
@@ -430,7 +436,8 @@ public final class RecordingEngine: ObservableObject {
         pauseWhenBrowserAddressUnavailable: Bool? = nil
     ) {
         self.intervalSeconds = max(0.5, intervalSeconds)
-        self.maxDimension = max(480, maxDimension)
+        self.maxDimension = maxDimension == 0 ? 0 : max(480, maxDimension)
+        self.stillQuality = min(1, max(0, stillQuality))
         self.retentionDays = max(1, retentionDays)
         self.storageCapMB = max(0, storageCapMB)
         self.autoCompactEnabled = autoCompactEnabled
@@ -443,8 +450,18 @@ public final class RecordingEngine: ObservableObject {
         if let pauseWhenBrowserAddressUnavailable {
             self.pauseWhenBrowserAddressUnavailable = pauseWhenBrowserAddressUnavailable
         }
-        let dim = self.maxDimension
-        Task { await pipeline.applyMaxDimension(dim) }
+        applyCaptureQualityToPipeline()
+    }
+
+    private func applyCaptureQualityToPipeline() {
+        let dimension = maxDimension
+        let quality = min(1, max(0, stillQuality))
+        Task {
+            await pipeline.applyCaptureQuality(
+                maxDimension: dimension,
+                stillQuality: quality
+            )
+        }
     }
 
     /// Apply a pure `StorageMaintenancePlan` (from `StorageManagementMode.maintenancePlan`).

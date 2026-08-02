@@ -35,10 +35,11 @@ public struct CapturedBitmap: Sendable {
 /// ScreenCaptureKit snapshot capture enriched with CGWindowList metadata.
 /// Safe to call from a background actor / queue - HEIC encode never requires MainActor.
 public final class ScreenCaptureService: NSObject, @unchecked Sendable {
-    public var maxDimension: Int = 1920
+    /// Longest output edge in pixels. Zero preserves native display resolution.
+    public var maxDimension: Int = 2_880
     public var maxWindows: Int = 60
     /// Lossy quality for HEIC / JPEG (0...1).
-    public var stillQuality: Double = 0.82
+    public var stillQuality: Double = 0.94
     /// Prefer JPEG stills instead of HEIC (Snapshots to Encoding).
     public var preferJPEG: Bool = false
     /// When true (default), capture the display under the frontmost window (multi-monitor).
@@ -57,15 +58,13 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let config = SCStreamConfiguration()
         let scale = Self.backingScale(for: display)
-        var w = display.width * scale
-        var h = display.height * scale
-        if max(w, h) > maxDimension {
-            let factor = Double(maxDimension) / Double(max(w, h))
-            w = max(1, Int(Double(w) * factor))
-            h = max(1, Int(Double(h) * factor))
-        }
-        config.width = w
-        config.height = h
+        let outputSize = Self.outputSize(
+            nativeWidth: display.width * scale,
+            nativeHeight: display.height * scale,
+            maxDimension: maxDimension
+        )
+        config.width = outputSize.width
+        config.height = outputSize.height
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.showsCursor = true
         config.captureResolution = .best
@@ -117,6 +116,26 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
             focusedBundleVersion: focused.version,
             captureDisplay: displayRect,
             displayID: displayID
+        )
+    }
+
+    /// Applies a bounded longest-edge policy without ever upscaling. A zero
+    /// limit is intentionally native, which is how the Ultra preset is stored.
+    static func outputSize(
+        nativeWidth: Int,
+        nativeHeight: Int,
+        maxDimension: Int
+    ) -> (width: Int, height: Int) {
+        let width = max(1, nativeWidth)
+        let height = max(1, nativeHeight)
+        let longestEdge = max(width, height)
+        guard maxDimension > 0, longestEdge > maxDimension else {
+            return (width, height)
+        }
+        let factor = Double(maxDimension) / Double(longestEdge)
+        return (
+            max(1, Int((Double(width) * factor).rounded())),
+            max(1, Int((Double(height) * factor).rounded()))
         )
     }
 
