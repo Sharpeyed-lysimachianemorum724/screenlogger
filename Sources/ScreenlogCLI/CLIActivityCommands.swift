@@ -11,7 +11,8 @@ extension ScreenlogCLIMain {
         case "time":
             let s = try client.stats()
             print("frames: \(s.totalFrames)")
-            print("approx_recorded_seconds: \(s.totalFrames * 2)")
+            print("moments: \(s.momentCount)")
+            print("approx_recorded_seconds: \(s.momentCount * 2)")
             print("unfinalized: \(s.unfinalizedFrames)")
         case "top-applications", "top-apps":
             let limit = try intFlag(rest, name: "--limit", allowed: 1...500) ?? 20

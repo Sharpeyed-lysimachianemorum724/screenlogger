@@ -159,12 +159,70 @@ struct HistoryPane: View {
                 if let issue = model.selectedFramePreviewIssue {
                     previewIssueView(issue)
                 }
+
+                if model.selectedTimelineMomentFrames.count > 1 {
+                    VStack {
+                        timelineDisplaySwitcher
+                        Spacer()
+                    }
+                    .padding(.top, 14)
+                    .padding(.horizontal, 18)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             bottomChrome
                 .frame(maxWidth: .infinity)
         }
+    }
+
+    @ViewBuilder
+    private var timelineDisplaySwitcher: some View {
+        let displays = model.selectedTimelineMomentFrames
+        HStack(spacing: 8) {
+            Image(systemName: "display.2")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            if displays.count <= 3 {
+                timelineDisplayPicker(displays)
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+            } else {
+                timelineDisplayPicker(displays)
+                    .pickerStyle(.menu)
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.white.opacity(controlStrokeOpacity), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("timeline.display.switcher")
+    }
+
+    private func timelineDisplayPicker(_ displays: [TimelineFrame]) -> some View {
+        Picker(
+            "Display",
+            selection: Binding(
+                get: { model.selectedTimelineID ?? displays[0].id },
+                set: { model.selectTimelineDisplay(frameID: $0) }
+            )
+        ) {
+            ForEach(Array(displays.enumerated()), id: \.element.id) { index, frame in
+                Text(TimelineDisplayPresentation.label(for: index, in: displays)).tag(frame.id)
+            }
+        }
+        .labelsHidden()
+        .accessibilityLabel("Captured display")
+        .accessibilityValue(Text(model.selectedTimelineDisplayLabel ?? "Display"))
+        .accessibilityHint("Choose a display saved at this moment")
+        .accessibilityIdentifier("timeline.display.picker")
     }
 
     private func showRecentTimeline() {

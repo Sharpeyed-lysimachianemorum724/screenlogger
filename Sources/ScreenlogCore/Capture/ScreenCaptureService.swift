@@ -44,79 +44,173 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
     public var preferJPEG: Bool = false
     /// When true (default), capture the display under the frontmost window (multi-monitor).
     public var preferFrontmostDisplay: Bool = true
+    /// Active display preserves the original behavior. All captures every
+    /// connected display from one shareable-content snapshot.
+    public var displayMode: CaptureDisplayMode = .active
 
     public override init() {
         super.init()
     }
 
-    public func captureOnce() async throws -> CapturedBitmap {
+    public func captureOnce(
+        excludingApplicationsWithBundleIDs excludedBundleIDs: Set<String> = []
+    ) async throws -> CapturedBitmap {
+        guard
+            let bitmap = try await captureDisplays(
+                excludingApplicationsWithBundleIDs: excludedBundleIDs
+            ).first
+        else {
+            throw CaptureError.noDisplay
+        }
+        return bitmap
+    }
+
+    /// Captures the configured display set as one logical interval. Display
+    /// discovery and metadata are shared, and raw screenshots are collected
+    /// before encoding so multi-display moments stay close in time.
+    public func captureDisplays(
+        excludingApplicationsWithBundleIDs excludedBundleIDs: Set<String> = []
+    ) async throws -> [CapturedBitmap] {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let display = Self.selectDisplay(from: content, preferFrontmost: preferFrontmostDisplay) else {
+        let normalizedExcludedBundleIDs = Set(excludedBundleIDs.map { $0.lowercased() })
+        let excludedApplications = content.applications.filter {
+            normalizedExcludedBundleIDs.contains($0.bundleIdentifier.lowercased())
+        }
+        let displays = Self.displaysToCapture(
+            from: content,
+            mode: displayMode,
+            preferFrontmost: preferFrontmostDisplay
+        )
+        guard !displays.isEmpty else {
             throw CaptureError.noDisplay
         }
 
-        let filter = SCContentFilter(display: display, excludingWindows: [])
-        let config = SCStreamConfiguration()
-        let scale = Self.backingScale(for: display)
-        let outputSize = Self.outputSize(
-            nativeWidth: display.width * scale,
-            nativeHeight: display.height * scale,
-            maxDimension: maxDimension
-        )
-        config.width = outputSize.width
-        config.height = outputSize.height
-        config.pixelFormat = kCVPixelFormatType_32BGRA
-        config.showsCursor = true
-        config.captureResolution = .best
-
-        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-
-        // HEIC/JPEG encode is CPU-bound - keep it off MainActor (caller should already be off-main).
-        let quality = stillQuality
-        let preferJPEG = preferJPEG
-        let encoded: (data: Data, ext: String) = try await withCheckedThrowingContinuation { cont in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    cont.resume(returning: try Self.encodeStill(image, quality: quality, preferJPEG: preferJPEG))
-                } catch {
-                    cont.resume(throwing: error)
-                }
+        var rawCaptures: [(display: SCDisplay, image: CGImage)] = []
+        rawCaptures.reserveCapacity(displays.count)
+        var firstFailure: Error?
+        for display in displays {
+            do {
+                let filter = SCContentFilter(
+                    display: display,
+                    excludingApplications: excludedApplications,
+                    exceptingWindows: []
+                )
+                let config = Self.streamConfiguration(
+                    for: display,
+                    maxDimension: maxDimension
+                )
+                let image = try await SCScreenshotManager.captureImage(
+                    contentFilter: filter,
+                    configuration: config
+                )
+                rawCaptures.append((display, image))
+            } catch {
+                firstFailure = firstFailure ?? error
+                log.error(
+                    "display capture failed id=\(display.displayID): \(error.localizedDescription, privacy: .public)"
+                )
             }
+        }
+        if rawCaptures.isEmpty {
+            throw firstFailure ?? CaptureError.noDisplay
         }
 
         // Prefer CGWindowList for z-order + bounds accuracy; enrich titles from SC when useful.
         let windows = Self.windowBoundsPreferringCG(scContent: content, limit: maxWindows)
         let focused = Self.focusedApp()
         let ts = Int64(Date().timeIntervalSince1970 * 1000)
+        let quality = stillQuality
+        let preferJPEG = preferJPEG
+        var bitmaps: [CapturedBitmap] = []
+        bitmaps.reserveCapacity(rawCaptures.count)
 
-        // display.frame is global CG points (origin top-left in window-server space).
-        let frame = display.frame
-        let displayRect = CaptureDisplayRect(
-            x: frame.origin.x,
-            y: frame.origin.y,
-            width: frame.size.width,
-            height: frame.size.height
-        )
-        let displayID = UInt32(display.displayID)
+        for raw in rawCaptures {
+            let encoded: (data: Data, ext: String)
+            do {
+                // HEIC/JPEG encoding is CPU-bound. The caller is an actor, but
+                // the work itself belongs on a user-initiated worker queue.
+                let image = raw.image
+                encoded = try await withCheckedThrowingContinuation { continuation in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        do {
+                            continuation.resume(
+                                returning: try Self.encodeStill(
+                                    image,
+                                    quality: quality,
+                                    preferJPEG: preferJPEG
+                                )
+                            )
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                }
+            } catch {
+                firstFailure = firstFailure ?? error
+                log.error(
+                    "display encode failed id=\(raw.display.displayID): \(error.localizedDescription, privacy: .public)"
+                )
+                continue
+            }
 
-        log.debug(
-            "capture \(image.width)x\(image.height) ext=\(encoded.ext) windows=\(windows.count) display=\(Int(displayRect.width))x\(Int(displayRect.height)) id=\(displayID) bundle=\(focused.bundleID ?? "-", privacy: .private(mask: .hash))"
+            // display.frame is global CG points (origin top-left in window-server space).
+            let frame = raw.display.frame
+            let displayRect = CaptureDisplayRect(
+                x: frame.origin.x,
+                y: frame.origin.y,
+                width: frame.size.width,
+                height: frame.size.height
+            )
+            let displayID = UInt32(raw.display.displayID)
+
+            log.debug(
+                "capture \(raw.image.width)x\(raw.image.height) ext=\(encoded.ext) windows=\(windows.count) display=\(Int(displayRect.width))x\(Int(displayRect.height)) id=\(displayID) bundle=\(focused.bundleID ?? "-", privacy: .private(mask: .hash))"
+            )
+            bitmaps.append(
+                CapturedBitmap(
+                    imageData: encoded.data,
+                    imageExtension: encoded.ext,
+                    width: raw.image.width,
+                    height: raw.image.height,
+                    timestampMs: ts,
+                    windowBounds: windows,
+                    focusedProcessID: focused.processID,
+                    focusedBundleID: focused.bundleID,
+                    focusedTitle: focused.title,
+                    displayName: focused.displayName,
+                    focusedBundleVersion: focused.version,
+                    captureDisplay: displayRect,
+                    displayID: displayID
+                )
+            )
+        }
+
+        if bitmaps.isEmpty {
+            throw firstFailure ?? CaptureError.encodeFailed
+        }
+        if bitmaps.count != displays.count {
+            log.error("partial display capture saved=\(bitmaps.count) requested=\(displays.count)")
+        }
+        return bitmaps
+    }
+
+    private static func streamConfiguration(
+        for display: SCDisplay,
+        maxDimension: Int
+    ) -> SCStreamConfiguration {
+        let config = SCStreamConfiguration()
+        let scale = backingScale(for: display)
+        let size = outputSize(
+            nativeWidth: display.width * scale,
+            nativeHeight: display.height * scale,
+            maxDimension: maxDimension
         )
-        return CapturedBitmap(
-            imageData: encoded.data,
-            imageExtension: encoded.ext,
-            width: image.width,
-            height: image.height,
-            timestampMs: ts,
-            windowBounds: windows,
-            focusedProcessID: focused.processID,
-            focusedBundleID: focused.bundleID,
-            focusedTitle: focused.title,
-            displayName: focused.displayName,
-            focusedBundleVersion: focused.version,
-            captureDisplay: displayRect,
-            displayID: displayID
-        )
+        config.width = size.width
+        config.height = size.height
+        config.pixelFormat = kCVPixelFormatType_32BGRA
+        config.showsCursor = true
+        config.captureResolution = .best
+        return config
     }
 
     /// Applies a bounded longest-edge policy without ever upscaling. A zero
@@ -140,6 +234,65 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
     }
 
     // MARK: - Display selection (multi-monitor)
+
+    private static func displaysToCapture(
+        from content: SCShareableContent,
+        mode: CaptureDisplayMode,
+        preferFrontmost: Bool
+    ) -> [SCDisplay] {
+        switch mode {
+        case .active:
+            return selectDisplay(from: content, preferFrontmost: preferFrontmost).map { [$0] } ?? []
+        case .all:
+            let mainID = CGMainDisplayID()
+            var ordered = content.displays.sorted { lhs, rhs in
+                let lhsIsMain = lhs.displayID == mainID
+                let rhsIsMain = rhs.displayID == mainID
+                if lhsIsMain != rhsIsMain { return lhsIsMain }
+                if lhs.frame.minX != rhs.frame.minX { return lhs.frame.minX < rhs.frame.minX }
+                if lhs.frame.minY != rhs.frame.minY { return lhs.frame.minY < rhs.frame.minY }
+                return lhs.displayID < rhs.displayID
+            }
+            // The app selects the final stored frame when opening a newly saved
+            // moment. Put the display containing the active app last so the
+            // first view remains the one the person was actually using.
+            if let activeDisplay = selectDisplay(
+                from: content,
+                preferFrontmost: preferFrontmost
+            ),
+                let activeIndex = ordered.firstIndex(where: {
+                    $0.displayID == activeDisplay.displayID
+                })
+            {
+                ordered.append(ordered.remove(at: activeIndex))
+            }
+            return ordered
+        }
+    }
+
+    /// Limits global window-server metadata to windows that intersect one
+    /// captured display. Spanning windows are intentionally present in both.
+    static func windows(
+        _ windows: [WindowBound],
+        visibleOn display: CaptureDisplayRect?
+    ) -> [WindowBound] {
+        guard let display, display.width > 0, display.height > 0 else { return windows }
+        let displayRect = CGRect(
+            x: display.x,
+            y: display.y,
+            width: display.width,
+            height: display.height
+        )
+        return windows.filter { window in
+            let windowRect = CGRect(
+                x: window.x,
+                y: window.y,
+                width: window.width,
+                height: window.height
+            )
+            return !windowRect.isNull && windowRect.intersects(displayRect)
+        }
+    }
 
     /// Prefer the display containing the frontmost app's key window; fall back to main / first.
     private static func selectDisplay(from content: SCShareableContent, preferFrontmost: Bool) -> SCDisplay? {

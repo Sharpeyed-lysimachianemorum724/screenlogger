@@ -29,13 +29,14 @@ struct RecordingCaptureBackoff: Equatable {
 /// Isolated from the UI so RecordingEngine's MainActor loop only hops back for published state.
 private actor CapturePipeline {
     private let capture = ScreenCaptureService()
-    private let differentialOCR = DifferentialOCRService()
+    private var differentialOCRByDisplay: [UInt32: DifferentialOCRService] = [:]
     private let fullOCR = OCRService()
     private let browserURL = BrowserURLService()
     private let axExtractor = AXTreeExtractor()
 
     private var exclusions: ExclusionStore = .shared
     private var dataRoot: URL?
+    private var recognitionLanguages: [String] = []
 
     var maxDimension: Int = 2_880
     var stillQuality: Double = 0.94
@@ -46,10 +47,12 @@ private actor CapturePipeline {
     var excludePrivateTabs = true
     /// Fail closed for supported browsers when their active domain is unknown.
     var pauseWhenBrowserAddressUnavailable = false
+    var displayMode: CaptureDisplayMode = .active
 
     struct CycleOutcome: Sendable {
-        /// Frame id when stored; nil when skipped (exclusion).
-        var frameID: Int64?
+        /// One frame per successfully stored display. Empty when privacy skips
+        /// the entire interval.
+        var frameIDs: [Int64]
         var ocrReused: Bool
         var axNodes: Int
         var pauseReason: CapturePauseReason?
@@ -64,7 +67,8 @@ private actor CapturePipeline {
         captureBrowserURL: Bool? = nil,
         useDifferentialOCR: Bool? = nil,
         excludePrivateTabs: Bool? = nil,
-        pauseWhenBrowserAddressUnavailable: Bool? = nil
+        pauseWhenBrowserAddressUnavailable: Bool? = nil,
+        displayMode: CaptureDisplayMode? = nil
     ) {
         self.exclusions = exclusions
         self.dataRoot = dataRoot
@@ -78,6 +82,10 @@ private actor CapturePipeline {
         if let excludePrivateTabs { self.excludePrivateTabs = excludePrivateTabs }
         if let pauseWhenBrowserAddressUnavailable {
             self.pauseWhenBrowserAddressUnavailable = pauseWhenBrowserAddressUnavailable
+        }
+        if let displayMode {
+            self.displayMode = displayMode
+            capture.displayMode = displayMode
         }
     }
 
@@ -96,6 +104,10 @@ private actor CapturePipeline {
     func setCaptureAXTree(_ value: Bool) { captureAXTree = value }
     func setCaptureBrowserURL(_ value: Bool) { captureBrowserURL = value }
     func setUseDifferentialOCR(_ value: Bool) { useDifferentialOCR = value }
+    func setDisplayMode(_ value: CaptureDisplayMode) {
+        displayMode = value
+        capture.displayMode = value
+    }
 
     func applyCaptureFlags(ax: Bool, browserURL: Bool, differentialOCR: Bool) {
         captureAXTree = ax
@@ -105,10 +117,12 @@ private actor CapturePipeline {
 
     func applySnapshotPrefs(preferJPEG: Bool, ocrLanguages: [String], differentialOCR: Bool) {
         capture.preferJPEG = preferJPEG
-        // Both OCR services must get languages: default capture uses DifferentialOCRService.
-        // Parameter `differentialOCR` is a Bool flag - do not shadow the service property.
+        recognitionLanguages = ocrLanguages
         fullOCR.recognitionLanguages = ocrLanguages
-        self.differentialOCR.recognitionLanguages = ocrLanguages
+        for service in differentialOCRByDisplay.values {
+            service.recognitionLanguages = ocrLanguages
+            service.reset()
+        }
         useDifferentialOCR = differentialOCR
     }
 
@@ -118,21 +132,23 @@ private actor CapturePipeline {
         if exclusions.isExcluded(bundleID: earlyBundle, domain: nil) {
             log.info("skip capture: excluded frontmost bundle \(earlyBundle ?? "?", privacy: .private(mask: .hash))")
             return CycleOutcome(
-                frameID: nil,
+                frameIDs: [],
                 ocrReused: false,
                 axNodes: 0,
                 pauseReason: .excludedContent
             )
         }
 
-        let bitmap = try await capture.captureOnce()
+        let excludedBundleIDs = excludedApplicationBundleIDs()
+        let bitmaps = try await capture.captureDisplays(
+            excludingApplicationsWithBundleIDs: excludedBundleIDs
+        )
+        guard let representative = bitmaps.first else { throw CaptureError.noDisplay }
 
         var url: String?
         var domain: String?
-        var title = bitmap.focusedTitle ?? ""
-        let bundleID = bitmap.focusedBundleID ?? earlyBundle
-        let displayName = bitmap.displayName
-        let bundleVersion = bitmap.focusedBundleVersion ?? ""
+        var title = representative.focusedTitle ?? ""
+        let bundleID = representative.focusedBundleID ?? earlyBundle
 
         var browserAttribution: BrowserURLAttribution?
         if captureBrowserURL || pauseWhenBrowserAddressUnavailable {
@@ -153,7 +169,7 @@ private actor CapturePipeline {
                 "skip frame storage: excluded bundle=\(bundleID ?? "-", privacy: .private(mask: .hash)) domain=\(domain ?? "-", privacy: .private(mask: .hash))"
             )
             return CycleOutcome(
-                frameID: nil,
+                frameIDs: [],
                 ocrReused: false,
                 axNodes: 0,
                 pauseReason: .excludedContent
@@ -167,7 +183,7 @@ private actor CapturePipeline {
                 "skip private browsing tab bundle=\(bundleID ?? "-", privacy: .private(mask: .hash)) title=\(title, privacy: .private(mask: .hash))"
             )
             return CycleOutcome(
-                frameID: nil,
+                frameIDs: [],
                 ocrReused: false,
                 axNodes: 0,
                 pauseReason: .privateBrowsing
@@ -183,79 +199,139 @@ private actor CapturePipeline {
                 "skip browser frame: address unavailable or changed bundle=\(bundleID ?? "-", privacy: .private(mask: .hash))"
             )
             return CycleOutcome(
-                frameID: nil,
+                frameIDs: [],
                 ocrReused: false,
                 axNodes: 0,
                 pauseReason: .browserAddressUnavailable
             )
         }
 
-        // Full-screen OCR (differential or full), then attribute to FG app vs background windows.
-        let rawOCR: OCRResult
-        let reused: Bool
-        if useDifferentialOCR {
-            let diff = try await differentialOCR.recognize(pngData: bitmap.imageData)
-            rawOCR = diff.result
-            reused = diff.reused
-        } else {
-            rawOCR = try await fullOCR.recognize(pngData: bitmap.imageData)
-            reused = false
-        }
-
-        let attributed = OCRService.attributeToForegroundBackground(
-            result: rawOCR,
-            imageWidth: bitmap.width,
-            imageHeight: bitmap.height,
-            captureDisplay: bitmap.captureDisplay,
-            windowBounds: bitmap.windowBounds,
-            foregroundBundleID: bundleID
-        )
-
-        // Attach browser URL to the frontmost window of the focused app for window_bound.url.
-        var windowBounds = bitmap.windowBounds
-        if let url, let bundleID {
-            if let idx = windowBounds.indices
-                .sorted(by: { windowBounds[$0].zOrder < windowBounds[$1].zOrder })
-                .first(where: { windowBounds[$0].bundleID == bundleID })
-            {
-                windowBounds[idx].url = url
-            }
-        }
-
-        let payload = CapturePayload(
-            imageData: bitmap.imageData,
-            timestampMs: bitmap.timestampMs,
-            width: bitmap.width,
-            height: bitmap.height,
-            foreground: attributed.foreground,
-            background: attributed.background,
-            title: title,
-            bundleID: bundleID,
-            bundleVersion: bundleVersion,
-            displayName: displayName,
-            url: url,
-            domain: domain,
-            ocrBoxes: attributed.boxes,
-            windowBounds: windowBounds,
-            isInactive: false,
-            imageFileExtension: bitmap.imageExtension,
-            captureDisplay: bitmap.captureDisplay
-        )
-
-        // SQLite + filesystem write off MainActor.
-        let frameID = try store.store(payload: payload)
-
+        var frameIDs: [Int64] = []
+        var reusedCount = 0
         var axNodes = 0
-        if captureAXTree, AccessibilityPermission.isTrusted(prompt: false) {
-            if let snap = axExtractor.captureFocusedTree(
-                expectedPID: bitmap.focusedProcessID
-            ) {
-                try store.storeAXSnapshot(frameID: frameID, snapshot: snap)
-                axNodes = snap.nodeCount
+        var attachedAXTree = false
+        var firstFailure: Error?
+
+        for bitmap in bitmaps {
+            let visibleWindows = ScreenCaptureService.windows(
+                bitmap.windowBounds,
+                visibleOn: bitmap.captureDisplay
+            ).filter { window in
+                guard let bundleID = window.bundleID?.lowercased() else { return true }
+                return !excludedBundleIDs.contains(bundleID)
+            }
+            let containsFocusedWindow =
+                bundleID.map { focusedBundleID in
+                    visibleWindows.contains(where: { $0.bundleID == focusedBundleID })
+                } ?? false
+
+            do {
+                // Each display owns independent differential state. Alternating
+                // between displays must never reuse text from a different screen.
+                let rawOCR: OCRResult
+                let reused: Bool
+                if useDifferentialOCR {
+                    let service = differentialOCRService(for: bitmap.displayID)
+                    let diff = try await service.recognize(pngData: bitmap.imageData)
+                    rawOCR = diff.result
+                    reused = diff.reused
+                } else {
+                    rawOCR = try await fullOCR.recognize(pngData: bitmap.imageData)
+                    reused = false
+                }
+
+                let attributed = OCRService.attributeToForegroundBackground(
+                    result: rawOCR,
+                    imageWidth: bitmap.width,
+                    imageHeight: bitmap.height,
+                    captureDisplay: bitmap.captureDisplay,
+                    windowBounds: visibleWindows,
+                    foregroundBundleID: bundleID,
+                    allowVisibleWindowFallback: bitmaps.count == 1 || containsFocusedWindow
+                )
+
+                // Attach the active browser address only to its visible window.
+                var windowBounds = visibleWindows
+                if let url, let bundleID {
+                    if let index = windowBounds.indices
+                        .sorted(by: { windowBounds[$0].zOrder < windowBounds[$1].zOrder })
+                        .first(where: { windowBounds[$0].bundleID == bundleID })
+                    {
+                        windowBounds[index].url = url
+                    }
+                }
+
+                let payload = CapturePayload(
+                    imageData: bitmap.imageData,
+                    timestampMs: bitmap.timestampMs,
+                    width: bitmap.width,
+                    height: bitmap.height,
+                    foreground: attributed.foreground,
+                    background: attributed.background,
+                    title: title,
+                    bundleID: bundleID,
+                    bundleVersion: bitmap.focusedBundleVersion ?? "",
+                    displayName: bitmap.displayName,
+                    url: url,
+                    domain: domain,
+                    ocrBoxes: attributed.boxes,
+                    windowBounds: windowBounds,
+                    isInactive: false,
+                    imageFileExtension: bitmap.imageExtension,
+                    captureDisplay: bitmap.captureDisplay
+                )
+
+                let frameID = try store.store(payload: payload)
+                frameIDs.append(frameID)
+                if reused { reusedCount += 1 }
+
+                if !attachedAXTree,
+                    containsFocusedWindow || bitmaps.count == 1,
+                    captureAXTree,
+                    AccessibilityPermission.isTrusted(prompt: false),
+                    let snapshot = axExtractor.captureFocusedTree(
+                        expectedPID: bitmap.focusedProcessID
+                    )
+                {
+                    try store.storeAXSnapshot(frameID: frameID, snapshot: snapshot)
+                    axNodes = snapshot.nodeCount
+                    attachedAXTree = true
+                }
+            } catch {
+                firstFailure = firstFailure ?? error
+                log.error(
+                    "display processing failed id=\(bitmap.displayID ?? 0): \(error.localizedDescription, privacy: .public)"
+                )
             }
         }
 
-        return CycleOutcome(frameID: frameID, ocrReused: reused, axNodes: axNodes, pauseReason: nil)
+        if frameIDs.isEmpty {
+            if let firstFailure { throw firstFailure }
+        }
+
+        return CycleOutcome(
+            frameIDs: frameIDs,
+            ocrReused: !frameIDs.isEmpty && reusedCount == frameIDs.count,
+            axNodes: axNodes,
+            pauseReason: nil
+        )
+    }
+
+    private func differentialOCRService(for displayID: UInt32?) -> DifferentialOCRService {
+        let key = displayID ?? UInt32.max
+        if let existing = differentialOCRByDisplay[key] { return existing }
+        let service = DifferentialOCRService()
+        service.recognitionLanguages = recognitionLanguages
+        differentialOCRByDisplay[key] = service
+        return service
+    }
+
+    private func excludedApplicationBundleIDs() -> Set<String> {
+        var bundleIDs = Set(exclusions.allSorted().map { $0.lowercased() })
+        if exclusions.passwordManagersCategoryEnabled {
+            bundleIDs.formUnion(ExclusionCatalog.passwordManagerBundleIDs.map { $0.lowercased() })
+        }
+        return bundleIDs
     }
 
     func runMaintenance(
@@ -296,6 +372,7 @@ public final class RecordingEngine: ObservableObject {
     @Published public private(set) var lastError: String?
     @Published public private(set) var lastFrameID: Int64?
     @Published public private(set) var framesCapturedSession: Int = 0
+    @Published public private(set) var lastCycleFrameCount: Int = 0
     @Published public private(set) var lastOCRReused = false
     @Published public private(set) var lastAXNodes: Int = 0
     @Published public private(set) var pausedForDisk = false
@@ -353,6 +430,8 @@ public final class RecordingEngine: ObservableObject {
     public var preferJPEGStill = false
     /// Vision OCR language codes (empty = system).
     public var ocrLanguages: [String] = []
+    /// Which connected displays are saved during each capture interval.
+    public private(set) var displayMode: CaptureDisplayMode = .active
     /// Published when the capture loop is skipping due to idle (not disk).
     @Published public private(set) var pausedForInactivity = false
 
@@ -384,12 +463,14 @@ public final class RecordingEngine: ObservableObject {
         let diff = useDifferentialOCR
         let jpeg = preferJPEGStill
         let langs = ocrLanguages
+        let displayMode = displayMode
         Task {
             await pipeline.configure(
                 exclusions: excl,
                 dataRoot: root,
                 maxDimension: dim,
-                stillQuality: quality
+                stillQuality: quality,
+                displayMode: displayMode
             )
             await pipeline.applyCaptureFlags(ax: ax, browserURL: browser, differentialOCR: diff)
             await pipeline.applySnapshotPrefs(
@@ -433,7 +514,8 @@ public final class RecordingEngine: ObservableObject {
         pauseOnInactivity: Bool? = nil,
         inactivityThresholdSeconds: TimeInterval? = nil,
         excludePrivateTabs: Bool? = nil,
-        pauseWhenBrowserAddressUnavailable: Bool? = nil
+        pauseWhenBrowserAddressUnavailable: Bool? = nil,
+        displayMode: CaptureDisplayMode = .active
     ) {
         self.intervalSeconds = max(0.5, intervalSeconds)
         self.maxDimension = maxDimension == 0 ? 0 : max(480, maxDimension)
@@ -450,6 +532,8 @@ public final class RecordingEngine: ObservableObject {
         if let pauseWhenBrowserAddressUnavailable {
             self.pauseWhenBrowserAddressUnavailable = pauseWhenBrowserAddressUnavailable
         }
+        self.displayMode = displayMode
+        Task { await pipeline.setDisplayMode(displayMode) }
         applyCaptureQualityToPipeline()
     }
 
@@ -490,6 +574,7 @@ public final class RecordingEngine: ObservableObject {
         isRecording = true
         lastError = nil
         framesCapturedSession = 0
+        lastCycleFrameCount = 0
         pausedForDisk = false
         pausedForInactivity = false
         pauseReason = nil
@@ -552,17 +637,19 @@ public final class RecordingEngine: ObservableObject {
         // await pipeline to MainActor free during capture/OCR/store
         let outcome = try await pipeline.captureAndStore(store: store)
         if let reason = outcome.pauseReason {
+            lastCycleFrameCount = 0
             pauseReason = reason
             throw CaptureError.excluded
         }
-        guard let id = outcome.frameID else {
+        guard let id = outcome.frameIDs.last else {
             throw CaptureError.excluded
         }
         pausedForDisk = false
         pausedForInactivity = false
         pauseReason = nil
         lastFrameID = id
-        framesCapturedSession += 1
+        lastCycleFrameCount = outcome.frameIDs.count
+        framesCapturedSession += outcome.frameIDs.count
         lastOCRReused = outcome.ocrReused
         lastAXNodes = outcome.axNodes
         lastError = nil
@@ -625,13 +712,15 @@ public final class RecordingEngine: ObservableObject {
                 if let store {
                     // Suspension point: CapturePipeline runs OCR / HEIC / DB off MainActor.
                     let outcome = try await pipeline.captureAndStore(store: store)
-                    if let id = outcome.frameID {
+                    if let id = outcome.frameIDs.last {
                         lastFrameID = id
-                        framesCapturedSession += 1
+                        lastCycleFrameCount = outcome.frameIDs.count
+                        framesCapturedSession += outcome.frameIDs.count
                         lastOCRReused = outcome.ocrReused
                         lastAXNodes = outcome.axNodes
                     }
                     pauseReason = outcome.pauseReason
+                    if outcome.frameIDs.isEmpty { lastCycleFrameCount = 0 }
                     // A completed cycle (including an intentional exclusion) proves
                     // the capture pipeline is healthy and resets retry throttling.
                     consecutiveFailures = 0

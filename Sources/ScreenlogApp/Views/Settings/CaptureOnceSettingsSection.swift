@@ -38,7 +38,7 @@ struct CaptureOnceSettingsSection: View {
         case .inProgress:
             return "Capturing the current screen and recognizing text..."
         case .success:
-            return "The capture was saved to your Library."
+            return successSubtitle
         case .failure(let failure):
             return failure.userMessage
         }
@@ -75,7 +75,7 @@ struct CaptureOnceSettingsSection: View {
 
         case .success:
             Divider()
-            Label("Capture saved", systemImage: "checkmark.circle.fill")
+            Label(successLabel, systemImage: "checkmark.circle.fill")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(SLDesign.success)
                 .accessibilityIdentifier("capture.manual.feedback")
@@ -97,6 +97,18 @@ struct CaptureOnceSettingsSection: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("capture.manual.feedback")
         }
+    }
+
+    private var successSubtitle: String {
+        let count = model.lastCaptureDisplayCount
+        return count > 1
+            ? "\(count) displays were saved to your Library."
+            : "The capture was saved to your Library."
+    }
+
+    private var successLabel: String {
+        let count = model.lastCaptureDisplayCount
+        return count > 1 ? "\(count) displays saved" : "Capture saved"
     }
 
     private func failureLabel(_ failure: CaptureOnceFailure) -> some View {

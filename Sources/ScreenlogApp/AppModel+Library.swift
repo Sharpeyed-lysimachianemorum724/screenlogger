@@ -203,7 +203,8 @@ extension AppModel {
         stopReplay()
         do {
             let frames = try await store.readAsync {
-                try $0.timeline(session: session, limit: 500).sorted { $0.id < $1.id }
+                try $0.timeline(session: session, limit: 500)
+                    .sorted(by: TimelineFrame.chronologicalAscending)
             }
             selectedSessionIndex = sessions.firstIndex(where: { $0.startMs == session.startMs })
             if searchSessionScoped {
@@ -213,7 +214,7 @@ extension AppModel {
             selectedTimelineID = frames.last?.id ?? frames.first?.id
             timelineLoadState = .ready
             publishTimelineNotice(
-                .timelineLoaded(scope: .session, momentCount: frames.count),
+                .timelineLoaded(scope: .session, momentCount: timelineMomentCount),
                 announce: true
             )
         } catch {
@@ -364,11 +365,11 @@ extension AppModel {
     func stepSegment(by delta: Int) {
         guard !timeline.isEmpty else { return }
         normalizeTimelineChronologyIfNeeded()
-        let ordered = timeline
+        let ordered = timelineMomentFrames
         guard let cur = selectedTimelineFrame,
-            let idx = selectedTimelineIndex
+            let idx = selectedTimelineMomentIndex
         else {
-            selectTimelineFrame(id: ordered.first?.id ?? 0)
+            selectFirstTimelineMoment()
             return
         }
         let curSeg = cur.segmentID
@@ -381,22 +382,22 @@ extension AppModel {
                     let targetSeg = ordered[i].segmentID
                     var j = i
                     while j > 0, ordered[j - 1].segmentID == targetSeg { j -= 1 }
-                    selectTimelineFrame(id: ordered[j].id)
+                    selectTimelineMoment(at: j)
                     return
                 }
                 i -= 1
             }
-            selectTimelineFrame(id: ordered[0].id)
+            selectTimelineMoment(at: 0)
         } else {
             var i = idx + 1
             while i < ordered.count {
                 if ordered[i].segmentID != curSeg || curSeg == nil {
-                    selectTimelineFrame(id: ordered[i].id)
+                    selectTimelineMoment(at: i)
                     return
                 }
                 i += 1
             }
-            if let last = ordered.last { selectTimelineFrame(id: last.id) }
+            if !ordered.isEmpty { selectTimelineMoment(at: ordered.count - 1) }
         }
     }
 

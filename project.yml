@@ -281,6 +281,8 @@ targets:
       - path: Sources/ScreenlogApp/FirstRunValueProgress.swift
       - path: Sources/ScreenlogApp/SettingsRecoveryPresentation.swift
       - path: Sources/ScreenlogApp/TimelineNotice.swift
+      - path: Sources/ScreenlogApp/TimelineDisplayPresentation.swift
+      - path: Sources/ScreenlogApp/SLTimeFormat.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.screenlog.app-tests

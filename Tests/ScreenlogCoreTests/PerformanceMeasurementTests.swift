@@ -171,6 +171,40 @@ final class PerformanceMeasurementTests: XCTestCase {
         XCTAssertEqual(index.position(of: 10), 1)
     }
 
+    func testTimelineNavigationIndexGroupsDisplaysIntoSynchronizedMoments() {
+        let index = TimelineNavigationIndex(
+            frames: [
+                TimelineFrame(id: 10, timestampMs: 1_000),
+                TimelineFrame(id: 11, timestampMs: 1_000),
+                TimelineFrame(id: 20, timestampMs: 2_000),
+                TimelineFrame(id: 21, timestampMs: 2_000),
+            ])
+
+        XCTAssertTrue(index.isChronological)
+        XCTAssertEqual(index.momentCount, 2)
+        XCTAssertEqual(index.momentPosition(of: 10), 0)
+        XCTAssertEqual(index.momentPosition(of: 11), 0)
+        XCTAssertEqual(index.momentPosition(of: 20), 1)
+        XCTAssertEqual(index.framePositions(inMomentContaining: 11), [0, 1])
+        XCTAssertEqual(index.framePositions(inMoment: 1), [2, 3])
+        XCTAssertEqual(index.representativeFramePositions, [0, 2])
+    }
+
+    func testTimelineNavigationIndexAcceptsRestoredIDsInTimestampOrder() {
+        let frames = [
+            TimelineFrame(id: 30, timestampMs: 1_000),
+            TimelineFrame(id: 10, timestampMs: 2_000),
+        ]
+        let index = TimelineNavigationIndex(frames: frames)
+
+        XCTAssertTrue(index.isChronological)
+        XCTAssertEqual(index.momentCount, 2)
+        XCTAssertEqual(
+            frames.reversed().sorted(by: TimelineFrame.chronologicalAscending).map(\.id),
+            [30, 10]
+        )
+    }
+
     private func observation(
         _ metric: PerformanceMetricID,
         statistic: String,

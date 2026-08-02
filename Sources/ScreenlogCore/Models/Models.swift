@@ -368,13 +368,29 @@ public struct RecordingStats: Sendable, Equatable, Codable {
     public var minTimestampMs: Int64?
     public var maxTimestampMs: Int64?
     public var unfinalizedFrames: Int64
+    /// Synchronized capture intervals. Older hosts omit these fields, so
+    /// clients fall back to physical frame counts during a rolling update.
+    public var totalMoments: Int64?
+    public var unfinalizedMoments: Int64?
 
-    public init(totalFrames: Int64, minTimestampMs: Int64?, maxTimestampMs: Int64?, unfinalizedFrames: Int64) {
+    public init(
+        totalFrames: Int64,
+        minTimestampMs: Int64?,
+        maxTimestampMs: Int64?,
+        unfinalizedFrames: Int64,
+        totalMoments: Int64? = nil,
+        unfinalizedMoments: Int64? = nil
+    ) {
         self.totalFrames = totalFrames
         self.minTimestampMs = minTimestampMs
         self.maxTimestampMs = maxTimestampMs
         self.unfinalizedFrames = unfinalizedFrames
+        self.totalMoments = totalMoments
+        self.unfinalizedMoments = unfinalizedMoments
     }
+
+    public var momentCount: Int64 { totalMoments ?? totalFrames }
+    public var unfinalizedMomentCount: Int64 { unfinalizedMoments ?? unfinalizedFrames }
 }
 
 /// Host status snapshot returned by `xpcGetStatus` (JSON over XPC).
@@ -471,6 +487,8 @@ public struct TimelineFrame: Sendable, Equatable, Codable, Identifiable {
     public var videoID: Int64?
     /// Index within the compacted video (for on-select extract).
     public var videoIndex: Int?
+    /// Global display geometry for this view of a synchronized moment.
+    public var captureDisplay: CaptureDisplayRect?
 
     public init(
         id: Int64,
@@ -487,7 +505,8 @@ public struct TimelineFrame: Sendable, Equatable, Codable, Identifiable {
         url: String? = nil,
         segmentID: Int64? = nil,
         videoID: Int64? = nil,
-        videoIndex: Int? = nil
+        videoIndex: Int? = nil,
+        captureDisplay: CaptureDisplayRect? = nil
     ) {
         self.id = id
         self.timestampMs = timestampMs
@@ -504,6 +523,7 @@ public struct TimelineFrame: Sendable, Equatable, Codable, Identifiable {
         self.segmentID = segmentID
         self.videoID = videoID
         self.videoIndex = videoIndex
+        self.captureDisplay = captureDisplay
     }
 
     /// Still file gone but frame lives in a compacted video - show list placeholder, extract on select.
@@ -528,5 +548,12 @@ public struct TimelineFrame: Sendable, Equatable, Codable, Identifiable {
         if let displayName, !displayName.isEmpty { return displayName }
         if let bundleID, !bundleID.isEmpty { return bundleID }
         return "Unknown app"
+    }
+
+    /// Stable capture order that remains correct after backup restoration,
+    /// where database identifiers may no longer increase with timestamps.
+    public static func chronologicalAscending(_ lhs: Self, _ rhs: Self) -> Bool {
+        if lhs.timestampMs != rhs.timestampMs { return lhs.timestampMs < rhs.timestampMs }
+        return lhs.id < rhs.id
     }
 }

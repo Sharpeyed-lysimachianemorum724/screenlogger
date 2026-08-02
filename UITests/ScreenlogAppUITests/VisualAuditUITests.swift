@@ -445,6 +445,77 @@ final class VisualAuditUITests: XCTestCase {
         demoPause(1.2)
     }
 
+    /// A deterministic Settings-to-Timeline tour for recording the
+    /// multi-display workflow without slowing the ordinary UI suite.
+    func testRecordMultiDisplayTour() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["SCREENLOGGER_RECORD_MULTIDISPLAY_DEMO"] == "1"
+                || FileManager.default.fileExists(
+                    atPath: "/tmp/screenlogger-record-multidisplay-tour"
+                ),
+            "Run explicitly while recording the multi-display tour."
+        )
+
+        let app = try launch(
+            route: "--open-library",
+            multipleDisplays: true
+        )
+        assertWindow("Library", in: app)
+        demoPause(0.8)
+
+        assertElement("navigation.library.settings", in: app).click()
+        assertWindow("Settings", in: app)
+        demoPause(0.8)
+
+        let search = app.searchFields["Search Settings"]
+        XCTAssertTrue(search.waitForExistence(timeout: Self.readinessTimeout))
+        search.click()
+        search.typeText("multiple monitors")
+        demoPause(1.0)
+
+        assertElement("settings.search-result.capture-displays", in: app).click()
+        let picker = assertElement("capture.displays.picker", in: app)
+        XCTAssertEqual(picker.value as? String, "Active display")
+        demoPause(1.0)
+
+        assertControl("All displays", in: app).click()
+        XCTAssertEqual(picker.value as? String, "All displays")
+        assertElement("capture.displays.privacy-note", in: app)
+        demoPause(1.4)
+
+        assertElement("navigation.settings.timeline", in: app).click()
+        assertWindow("Timeline", in: app)
+        let timelinePicker = assertElement("timeline.display.picker", in: app)
+        XCTAssertEqual(timelinePicker.value as? String, "Display 2")
+        demoPause(1.2)
+
+        assertControl("Main Display", in: app).click()
+        XCTAssertEqual(timelinePicker.value as? String, "Main Display")
+        demoPause(1.0)
+
+        assertControl("Display 2", in: app).click()
+        XCTAssertEqual(timelinePicker.value as? String, "Display 2")
+        demoPause(1.0)
+
+        assertElement("timeline.playback.previous", in: app).click()
+        demoPause(0.9)
+        assertElement("timeline.playback.previous", in: app).click()
+        XCTAssertEqual(
+            assertElement("timeline.display.picker", in: app).value as? String,
+            "Display 2"
+        )
+        demoPause(1.2)
+
+        assertElement("timeline.playback.next", in: app).click()
+        demoPause(0.8)
+        assertElement("timeline.playback.next", in: app).click()
+        XCTAssertEqual(
+            assertElement("timeline.display.picker", in: app).value as? String,
+            "Display 2"
+        )
+        demoPause(1.4)
+    }
+
     func testVisualAuditAssistantConnectionRecoveryDefaultLight() throws {
         let app = try launch(
             route: "--open-library",
@@ -490,7 +561,8 @@ final class VisualAuditUITests: XCTestCase {
         unreadablePreview: Bool = false,
         missingPermission: Bool = false,
         assistantDetected: [String] = [],
-        assistantReady: [String] = []
+        assistantReady: [String] = [],
+        multipleDisplays: Bool = false
     ) throws -> XCUIApplication {
         let directory = try XCTUnwrap(dataDirectory)
         let token = try XCTUnwrap(UUID(uuidString: directory.lastPathComponent)).uuidString
@@ -525,6 +597,10 @@ final class VisualAuditUITests: XCTestCase {
             assistantReady.joined(separator: ",")
         application.launchEnvironment["SCREENLOG_UI_TEST_DETECTED_ASSISTANTS"] =
             assistantDetected.joined(separator: ",")
+
+        if multipleDisplays {
+            application.launchEnvironment["SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"] = "1"
+        }
 
         if captureIssue {
             application.launchEnvironment["SCREENLOG_UI_TEST_CAPTURE_ISSUE"] = "start-failed"
@@ -758,6 +834,27 @@ final class VisualAuditUITests: XCTestCase {
             line: line
         )
         return button
+    }
+
+    @discardableResult
+    private func assertControl(
+        _ label: String,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        let candidates = [app.radioButtons[label], app.buttons[label]]
+        for candidate in candidates where candidate.waitForExistence(timeout: 0.75) {
+            XCTAssertTrue(
+                candidate.isEnabled,
+                "Expected \(label) to be enabled.",
+                file: file,
+                line: line
+            )
+            return candidate
+        }
+        XCTFail("Expected control named \(label).", file: file, line: line)
+        return app.descendants(matching: .any)[label]
     }
 
     @discardableResult

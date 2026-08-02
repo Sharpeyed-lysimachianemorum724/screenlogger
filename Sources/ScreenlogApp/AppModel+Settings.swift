@@ -44,6 +44,7 @@ extension AppModel {
         if d.object(forKey: ProductPreferenceKey.pauseOnInactivity) != nil {
             pauseOnInactivity = d.bool(forKey: ProductPreferenceKey.pauseOnInactivity)
         }
+        captureDisplayMode = snap.displayMode
         if let raw = d.string(forKey: ProductPreferenceKey.appearance),
             let pref = AppearancePreference(rawValue: raw)
         {
@@ -141,7 +142,8 @@ extension AppModel {
             pauseOnInactivity: pauseOnInactivity,
             inactivityThresholdSeconds: 300,
             excludePrivateTabs: excludePrivateTabs,
-            pauseWhenBrowserAddressUnavailable: pauseWhenBrowserAddressUnavailable
+            pauseWhenBrowserAddressUnavailable: pauseWhenBrowserAddressUnavailable,
+            displayMode: captureDisplayMode
         )
         applySnapshotPrefsToEngine()
     }

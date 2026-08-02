@@ -18,7 +18,11 @@ extension Store {
         f.video_index,
         f.segment,
         f.width,
-        f.height
+        f.height,
+        f.capture_display_x,
+        f.capture_display_y,
+        f.capture_display_width,
+        f.capture_display_height
         """
 
     private static let timelineJoinSQL = """
@@ -30,7 +34,15 @@ extension Store {
         """
 
     private static func timelineFrame(from stmt: OpaquePointer) -> TimelineFrame {
-        TimelineFrame(
+        let captureDisplay: CaptureDisplayRect? = {
+            guard let x = SQLiteColumn.doubleOptional(stmt, 15),
+                let y = SQLiteColumn.doubleOptional(stmt, 16),
+                let width = SQLiteColumn.doubleOptional(stmt, 17),
+                let height = SQLiteColumn.doubleOptional(stmt, 18)
+            else { return nil }
+            return CaptureDisplayRect(x: x, y: y, width: width, height: height)
+        }()
+        return TimelineFrame(
             id: SQLiteColumn.int64(stmt, 0),
             timestampMs: SQLiteColumn.int64(stmt, 1),
             imagePath: SQLiteColumn.text(stmt, 2),
@@ -45,7 +57,8 @@ extension Store {
             url: SQLiteColumn.text(stmt, 9),
             segmentID: SQLiteColumn.int64Optional(stmt, 12),
             videoID: SQLiteColumn.int64Optional(stmt, 10),
-            videoIndex: SQLiteColumn.intOptional(stmt, 11)
+            videoIndex: SQLiteColumn.intOptional(stmt, 11),
+            captureDisplay: captureDisplay
         )
     }
 
@@ -54,8 +67,14 @@ extension Store {
         let sql = """
             SELECT \(Self.timelineSelectSQL)
             \(Self.timelineJoinSQL)
-            ORDER BY f.id DESC
-            LIMIT ?
+            WHERE f.timestamp IN (
+                SELECT timestamp
+                FROM frame
+                GROUP BY timestamp
+                ORDER BY timestamp DESC
+                LIMIT ?
+            )
+            ORDER BY f.timestamp DESC, f.id DESC
             """
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
@@ -69,45 +88,89 @@ extension Store {
 
     /// Chronological window of frames around a center id (for search to replay).
     public func timelineAround(frameID: Int64, before: Int = 40, after: Int = 40) throws -> [TimelineFrame] {
+        guard let center = try frame(id: frameID) else { return [] }
         let sql = """
+            WITH before_moments AS (
+                SELECT DISTINCT timestamp
+                FROM frame
+                WHERE timestamp < ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            ), after_moments AS (
+                SELECT DISTINCT timestamp
+                FROM frame
+                WHERE timestamp > ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+            ), selected_moments AS (
+                SELECT timestamp FROM before_moments
+                UNION
+                SELECT ?
+                UNION
+                SELECT timestamp FROM after_moments
+            )
             SELECT \(Self.timelineSelectSQL)
             \(Self.timelineJoinSQL)
-            WHERE f.id BETWEEN ? AND ?
-            ORDER BY f.id ASC
+            WHERE f.timestamp IN (SELECT timestamp FROM selected_moments)
+            ORDER BY f.timestamp ASC, f.id ASC
             """
-        let lo = max(1, frameID - Int64(before))
-        let hi = frameID + Int64(after)
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
-        SQLiteBind.int64(stmt, 1, lo)
-        SQLiteBind.int64(stmt, 2, hi)
+        SQLiteBind.int64(stmt, 1, center.timestampMs)
+        SQLiteBind.int(stmt, 2, max(0, before))
+        SQLiteBind.int64(stmt, 3, center.timestampMs)
+        SQLiteBind.int(stmt, 4, max(0, after))
+        SQLiteBind.int64(stmt, 5, center.timestampMs)
         var rows: [TimelineFrame] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             rows.append(Self.timelineFrame(from: stmt))
-        }
-        // Fallback: if id gaps (exclusions), load nearest by timestamp from frame row.
-        if rows.isEmpty, let center = try frame(id: frameID) {
-            return try timelineNear(timestampMs: center.timestampMs, limit: before + after)
         }
         return rows
     }
 
     public func timelineNear(timestampMs: Int64, limit: Int = 80) throws -> [TimelineFrame] {
+        let boundedLimit = max(1, limit)
         let sql = """
+            WITH earlier_candidates AS (
+                SELECT DISTINCT timestamp
+                FROM frame
+                WHERE timestamp <= ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            ), later_candidates AS (
+                SELECT DISTINCT timestamp
+                FROM frame
+                WHERE timestamp > ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+            ), candidates AS (
+                SELECT timestamp FROM earlier_candidates
+                UNION
+                SELECT timestamp FROM later_candidates
+            ), nearest_moments AS (
+                SELECT timestamp
+                FROM candidates
+                ORDER BY ABS(timestamp - ?) ASC
+                LIMIT ?
+            )
             SELECT \(Self.timelineSelectSQL)
             \(Self.timelineJoinSQL)
-            ORDER BY ABS(f.timestamp - ?) ASC
-            LIMIT ?
+            WHERE f.timestamp IN (SELECT timestamp FROM nearest_moments)
+            ORDER BY f.timestamp ASC, f.id ASC
             """
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
         SQLiteBind.int64(stmt, 1, timestampMs)
-        SQLiteBind.int(stmt, 2, limit)
+        SQLiteBind.int(stmt, 2, boundedLimit)
+        SQLiteBind.int64(stmt, 3, timestampMs)
+        SQLiteBind.int(stmt, 4, boundedLimit)
+        SQLiteBind.int64(stmt, 5, timestampMs)
+        SQLiteBind.int(stmt, 6, boundedLimit)
         var rows: [TimelineFrame] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             rows.append(Self.timelineFrame(from: stmt))
         }
-        return rows.sorted { $0.id < $1.id }
+        return rows
     }
 
     /// Inclusive time-range timeline (`idx_frame_timestamp`) for session browse / scrub windows.
@@ -119,9 +182,15 @@ extension Store {
         let sql = """
             SELECT \(Self.timelineSelectSQL)
             \(Self.timelineJoinSQL)
-            WHERE f.timestamp >= ? AND f.timestamp <= ?
+            WHERE f.timestamp IN (
+                SELECT timestamp
+                FROM frame
+                WHERE timestamp >= ? AND timestamp <= ?
+                GROUP BY timestamp
+                ORDER BY timestamp ASC
+                LIMIT ?
+            )
             ORDER BY f.timestamp ASC, f.id ASC
-            LIMIT ?
             """
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }

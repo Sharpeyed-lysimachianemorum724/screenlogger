@@ -39,11 +39,13 @@ extension AppModel {
                 let tl =
                     if let libraryResultFrameID {
                         try s.timelineAround(frameID: libraryResultFrameID, before: 40, after: 40)
-                            .sorted { $0.id < $1.id }
+                            .sorted(by: TimelineFrame.chronologicalAscending)
                     } else if let loadedSession {
-                        try s.timeline(session: loadedSession, limit: 500).sorted { $0.id < $1.id }
+                        try s.timeline(session: loadedSession, limit: 500)
+                            .sorted(by: TimelineFrame.chronologicalAscending)
                     } else {
-                        try s.recentTimeline(limit: 100).sorted { $0.id < $1.id }
+                        try s.recentTimeline(limit: 100)
+                            .sorted(by: TimelineFrame.chronologicalAscending)
                     }
                 return (st, recent, tl)
             }
@@ -59,6 +61,7 @@ extension AppModel {
                     selectedTimelineID = previousSelection
                 } else {
                     selectedTimelineID = tl.last?.id
+                    rememberTimelineDisplayPreference(frameID: selectedTimelineID)
                 }
                 timelineLoadState = .ready
             }
@@ -92,7 +95,9 @@ extension AppModel {
         let preservesLibraryResultWindow = timelineNavigationOrigin == .libraryResult
         let selectedSessionStart = selectedSession?.startMs
         let previousSelection = selectedTimelineID
-        let wasFollowingLatest = previousSelection == nil || previousSelection == timeline.last?.id
+        let wasFollowingLatest =
+            previousSelection == nil
+            || selectedTimelineMomentIndex == timelineMomentCount - 1
 
         do {
             let snapshot = try await store.readAsync {
@@ -119,10 +124,11 @@ extension AppModel {
                     let selected = sessions.first(where: { $0.startMs == selectedSessionStart })
                 {
                     let timeline = try store.timeline(session: selected, limit: 500)
-                        .sorted { $0.id < $1.id }
+                        .sorted(by: TimelineFrame.chronologicalAscending)
                     return (stats, recent, sessions, timeline)
                 }
-                let timeline = try store.recentTimeline(limit: 100).sorted { $0.id < $1.id }
+                let timeline = try store.recentTimeline(limit: 100)
+                    .sorted(by: TimelineFrame.chronologicalAscending)
                 return (stats, recent, sessions, timeline)
             }
 
@@ -137,13 +143,18 @@ extension AppModel {
                 timeline = refreshedTimeline
                 timelineLoadState = .ready
                 if wasFollowingLatest {
-                    selectedTimelineID = refreshedTimeline.last?.id
+                    if timelineMomentCount > 0 {
+                        selectTimelineMoment(at: timelineMomentCount - 1)
+                    } else {
+                        selectedTimelineID = nil
+                    }
                 } else if let previousSelection,
                     refreshedTimeline.contains(where: { $0.id == previousSelection })
                 {
                     selectedTimelineID = previousSelection
                 } else {
                     selectedTimelineID = refreshedTimeline.last?.id
+                    rememberTimelineDisplayPreference(frameID: selectedTimelineID)
                 }
             }
         } catch {

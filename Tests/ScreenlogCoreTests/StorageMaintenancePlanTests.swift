@@ -163,7 +163,8 @@ final class StorageMaintenancePlanTests: XCTestCase {
             storageMode: .compress,
             stillEncoding: .jpeg,
             ocrLanguagesCSV: "en-US,fr-FR",
-            differentialOCR: false
+            differentialOCR: false,
+            displayMode: .all
         )
         CapturePreferenceStore.save(snap, to: defaults)
 
@@ -177,11 +178,13 @@ final class StorageMaintenancePlanTests: XCTestCase {
         XCTAssertEqual(loaded.ocrLanguagesCSV, "en-US,fr-FR")
         XCTAssertEqual(loaded.ocrLanguages, ["en-US", "fr-FR"])
         XCTAssertFalse(loaded.differentialOCR)
+        XCTAssertEqual(loaded.displayMode, .all)
 
         // Keys match the product constants AppModel uses.
         XCTAssertEqual(defaults.double(forKey: CapturePreferenceStore.intervalSeconds), 3.5, accuracy: 0.001)
         XCTAssertEqual(defaults.integer(forKey: CapturePreferenceStore.retentionDays), 45)
         XCTAssertEqual(defaults.string(forKey: ProductPreferenceKey.storageMode), "compress")
+        XCTAssertEqual(defaults.string(forKey: CapturePreferenceStore.displayMode), "all")
 
         // Round-trip storage mode to maintenance plan from loaded snapshot.
         let plan = loaded.maintenancePlan

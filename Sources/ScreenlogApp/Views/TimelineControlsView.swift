@@ -7,11 +7,9 @@ import SwiftUI
 @MainActor
 enum TimelinePlaybackControl {
     static func toggle(_ model: AppModel) {
-        guard model.timeline.count > 1 else { return }
-        if !model.isReplaying, !model.canStepForward,
-            let firstFrameID = model.timeline.first?.id
-        {
-            model.selectTimelineFrame(id: firstFrameID)
+        guard model.timelineMomentCount > 1 else { return }
+        if !model.isReplaying, !model.canStepForward {
+            model.selectFirstTimelineMoment()
         }
         model.toggleReplay()
     }
@@ -85,7 +83,7 @@ extension HistoryPane {
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.circle)
             .tint(model.accentSwiftUIColor)
-            .disabled(model.timeline.count < 2)
+            .disabled(model.timelineMomentCount < 2)
             .help(
                 shortcutHelp(
                     model.isReplaying ? "Pause replay" : "Play through moments",
@@ -252,7 +250,10 @@ extension HistoryPane {
                             .moment(frameID: frame.id),
                             origin: .timeline,
                             title: "Delete This Moment?",
-                            detail: "\(frame.appLabel) at \(SLTimeFormat.full(frame.timestampMs))."
+                            detail: TimelineDisplayPresentation.deletionDetail(
+                                frame: frame,
+                                displayCount: model.selectedTimelineMomentFrames.count
+                            )
                         )
                     }
                 } label: {
@@ -318,7 +319,7 @@ extension HistoryPane {
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.circle)
             .tint(model.accentSwiftUIColor)
-            .disabled(model.timeline.count < 2)
+            .disabled(model.timelineMomentCount < 2)
             .help(
                 shortcutHelp(
                     model.isReplaying ? "Pause replay" : "Play through moments",
@@ -515,8 +516,8 @@ extension HistoryPane {
 
         // AppModel normalizes every Timeline load into chronological capture order.
         // Avoid sorting the full collection again on each SwiftUI body update.
-        let ordered = model.timeline
-        guard let selectedIndex = model.selectedTimelineIndex else {
+        let ordered = model.timelineMomentFrames
+        guard let selectedIndex = model.selectedTimelineMomentIndex else {
             return (false, false)
         }
 

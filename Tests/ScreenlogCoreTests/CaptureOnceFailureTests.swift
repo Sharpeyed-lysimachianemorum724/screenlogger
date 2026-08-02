@@ -31,6 +31,24 @@ final class CaptureOnceFailureTests: XCTestCase {
         XCTAssertEqual(unchanged.height, 800)
     }
 
+    func testDisplayWindowFilteringKeepsOnlyIntersectingAndSpanningWindows() {
+        let leftDisplay = CaptureDisplayRect(x: 0, y: 0, width: 1000, height: 800)
+        let windows = [
+            WindowBound(bundleID: "dev.left", x: 20, y: 20, width: 300, height: 300),
+            WindowBound(bundleID: "dev.right", x: 1100, y: 20, width: 300, height: 300),
+            WindowBound(bundleID: "dev.spanning", x: 900, y: 40, width: 300, height: 300),
+        ]
+
+        let visible = ScreenCaptureService.windows(windows, visibleOn: leftDisplay)
+
+        XCTAssertEqual(visible.compactMap(\.bundleID), ["dev.left", "dev.spanning"])
+    }
+
+    func testDisplayWindowFilteringFallsBackToAllMetadataWithoutGeometry() {
+        let windows = [WindowBound(bundleID: "dev.example", x: 0, y: 0, width: 100, height: 100)]
+        XCTAssertEqual(ScreenCaptureService.windows(windows, visibleOn: nil).count, 1)
+    }
+
     func testOperationalFailuresCarryOnlyStablePrivacySafeCopy() {
         let rawDetail = "/Users/person/Secret Project/private-frame.heic: encoding failed"
         let error = NSError(

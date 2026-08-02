@@ -11,7 +11,9 @@ extension Store {
                 COUNT(*),
                 MIN(timestamp),
                 MAX(timestamp),
-                SUM(CASE WHEN image_path IS NOT NULL THEN 1 ELSE 0 END)
+                SUM(CASE WHEN image_path IS NOT NULL THEN 1 ELSE 0 END),
+                COUNT(DISTINCT timestamp),
+                COUNT(DISTINCT CASE WHEN image_path IS NOT NULL THEN timestamp END)
             FROM frame
             """
         )
@@ -23,13 +25,15 @@ extension Store {
             totalFrames: SQLiteColumn.int64(stmt, 0),
             minTimestampMs: SQLiteColumn.int64Optional(stmt, 1),
             maxTimestampMs: SQLiteColumn.int64Optional(stmt, 2),
-            unfinalizedFrames: SQLiteColumn.int64(stmt, 3)
+            unfinalizedFrames: SQLiteColumn.int64(stmt, 3),
+            totalMoments: SQLiteColumn.int64(stmt, 4),
+            unfinalizedMoments: SQLiteColumn.int64(stmt, 5)
         )
     }
 
     public func topApplications(limit: Int = 20) throws -> [UsageTopItem] {
         let sql = """
-            SELECT a.bundle_id, a.display_name, COUNT(f.id) AS fc
+            SELECT a.bundle_id, a.display_name, COUNT(DISTINCT f.timestamp) AS fc
             FROM frame f
             JOIN segment s ON s.id = f.segment
             JOIN application a ON a.id = s.application
@@ -55,7 +59,7 @@ extension Store {
 
     public func topDomains(limit: Int = 20) throws -> [UsageTopItem] {
         let sql = """
-            SELECT d.normalized_domain, d.common_name, COUNT(f.id) AS fc
+            SELECT d.normalized_domain, d.common_name, COUNT(DISTINCT f.timestamp) AS fc
             FROM frame f
             JOIN segment s ON s.id = f.segment
             JOIN domain d ON d.id = s.domain
@@ -83,11 +87,15 @@ extension Store {
     /// Enriched with primary app (first frame join) and optional still preview path.
     public func sessions(gapMs: Int64 = 5 * 60 * 1000) throws -> [SessionRow] {
         let sql = """
-            WITH ordered AS (
+            WITH moments AS (
+                SELECT DISTINCT timestamp
+                FROM frame
+            ),
+            ordered AS (
                 SELECT
                     timestamp,
                     timestamp - LAG(timestamp) OVER (ORDER BY timestamp) AS delta_ms
-                FROM frame
+                FROM moments
             ),
             breaks AS (
                 SELECT

@@ -34,10 +34,10 @@ public enum LibraryDeletionConfirmation: Sendable, Equatable {
 public struct LibraryDeletionPlan: Sendable {
     public let reviewID: UUID
     public let selection: LibraryDeletionSelection
-    /// Frames matching the requested moment/range before compacted-video expansion.
-    public let requestedFrameCount: Int
+    /// Synchronized moments matching the request before compacted-video expansion.
+    public let requestedMomentCount: Int
     /// Actual number removed. May be larger when a compacted video crosses the range.
-    public let affectedFrameCount: Int
+    public let affectedMomentCount: Int
     public let affectedVideoCount: Int
     public let managedFileCount: Int
     public let missingFileCount: Int
@@ -51,7 +51,7 @@ public struct LibraryDeletionPlan: Sendable {
 }
 
 public struct LibraryDeletionReport: Sendable, Equatable {
-    public let deletedFrameCount: Int
+    public let deletedMomentCount: Int
     public let deletedVideoCount: Int
     public let deletedManagedFileCount: Int
     public let skippedMissingFileCount: Int
@@ -288,7 +288,7 @@ public final class LibraryDeletionService: @unchecked Sendable {
         }
 
         return LibraryDeletionReport(
-            deletedFrameCount: plan.affectedFrameCount,
+            deletedMomentCount: plan.affectedMomentCount,
             deletedVideoCount: plan.affectedVideoCount,
             deletedManagedFileCount: managedExisting.count,
             skippedMissingFileCount: plan.missingFileCount,
@@ -341,7 +341,6 @@ public final class LibraryDeletionService: @unchecked Sendable {
         store: Store
     ) throws -> LibraryDeletionPlan {
         let requested = try selectedFrames(selection: selection, store: store)
-        let requestedIDs = Set(requested.map(\.id))
         let videoIDs: [Int64]
         if case .entireLibrary = selection {
             videoIDs = try allVideoIDs(store: store)
@@ -379,8 +378,8 @@ public final class LibraryDeletionService: @unchecked Sendable {
         return LibraryDeletionPlan(
             reviewID: UUID(),
             selection: selection,
-            requestedFrameCount: requestedIDs.count,
-            affectedFrameCount: affected.count,
+            requestedMomentCount: Set(requested.map(\.timestampMs)).count,
+            affectedMomentCount: Set(affected.map(\.timestampMs)).count,
             affectedVideoCount: videoIDs.count,
             managedFileCount: resources.filter { $0.isManaged && $0.exists }.count,
             missingFileCount: resources.filter { $0.isManaged && !$0.exists }.count,
@@ -394,6 +393,7 @@ public final class LibraryDeletionService: @unchecked Sendable {
 
     private struct FrameFileRow {
         var id: Int64
+        var timestampMs: Int64
         var imagePath: String?
         var videoID: Int64?
     }
@@ -407,16 +407,21 @@ public final class LibraryDeletionService: @unchecked Sendable {
         let frameID: Int64?
         switch selection {
         case .moment(let id):
-            sql = "SELECT id, image_path, video FROM frame WHERE id = ? ORDER BY id"
+            sql = """
+                SELECT id, timestamp, image_path, video
+                FROM frame
+                WHERE timestamp = (SELECT timestamp FROM frame WHERE id = ?)
+                ORDER BY id
+                """
             bounds = nil
             frameID = id
         case .timeRange(let start, let end), .today(let start, let end):
             guard start < end else { throw LibraryDeletionError.invalidRange }
-            sql = "SELECT id, image_path, video FROM frame WHERE timestamp >= ? AND timestamp < ? ORDER BY id"
+            sql = "SELECT id, timestamp, image_path, video FROM frame WHERE timestamp >= ? AND timestamp < ? ORDER BY id"
             bounds = (start, end)
             frameID = nil
         case .entireLibrary:
-            sql = "SELECT id, image_path, video FROM frame ORDER BY id"
+            sql = "SELECT id, timestamp, image_path, video FROM frame ORDER BY id"
             bounds = nil
             frameID = nil
         }
@@ -435,7 +440,7 @@ public final class LibraryDeletionService: @unchecked Sendable {
         for ids in videoIDs.chunked(maxCount: 400) {
             let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
             let stmt = try store.db.prepare(
-                "SELECT id, image_path, video FROM frame WHERE video IN (\(placeholders)) ORDER BY id"
+                "SELECT id, timestamp, image_path, video FROM frame WHERE video IN (\(placeholders)) ORDER BY id"
             )
             defer { sqlite3_finalize(stmt) }
             for (index, id) in ids.enumerated() { SQLiteBind.int64(stmt, Int32(index + 1), id) }
@@ -450,8 +455,9 @@ public final class LibraryDeletionService: @unchecked Sendable {
             result.append(
                 FrameFileRow(
                     id: SQLiteColumn.int64(stmt, 0),
-                    imagePath: SQLiteColumn.text(stmt, 1),
-                    videoID: SQLiteColumn.int64Optional(stmt, 2)
+                    timestampMs: SQLiteColumn.int64(stmt, 1),
+                    imagePath: SQLiteColumn.text(stmt, 2),
+                    videoID: SQLiteColumn.int64Optional(stmt, 3)
                 )
             )
         }

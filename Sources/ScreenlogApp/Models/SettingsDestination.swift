@@ -1,4 +1,5 @@
 import Foundation
+import ScreenlogCore
 
 /// Spoken state shared by custom checkbox and switch rows in Settings.
 /// Native controls usually infer this value, but explicit values keep custom
@@ -6,6 +7,32 @@ import Foundation
 enum SettingsAccessibilityValue {
     static func onOff(_ isOn: Bool) -> String {
         isOn ? "On" : "Off"
+    }
+}
+
+enum CaptureDisplaySettingsCopy {
+    static func summary(_ mode: CaptureDisplayMode) -> String {
+        switch mode {
+        case .active:
+            return "Follows the display containing the app you are using."
+        case .all:
+            return "Saves every connected display at each interval."
+        }
+    }
+
+    static func connectionNote(_ mode: CaptureDisplayMode, count: Int) -> String {
+        let count = max(1, count)
+        switch mode {
+        case .active:
+            if count == 1 { return "1 display connected. One moment is saved per interval." }
+            return "\(count) displays connected. One moment is saved per interval as focus moves."
+        case .all:
+            if count == 1 {
+                return "1 display connected. Displays connected later are included automatically."
+            }
+            return
+                "\(count) displays connected. Each interval saves one Timeline moment with \(count) display images and uses roughly \(count)x the processing and storage."
+        }
     }
 }
 
@@ -30,6 +57,7 @@ enum SettingsDestination: Hashable {
 
     static let captureStatus = anchor(SettingsAnchor.captureStatus)
     static let captureOnce = anchor(SettingsAnchor.captureOnce)
+    static let captureDisplays = anchor(SettingsAnchor.captureDisplays)
     static let captureTiming = anchor(SettingsAnchor.captureTiming)
     static let privacyPermissions = anchor(SettingsAnchor.privacyPermissions)
     static let privacyProtection = anchor(SettingsAnchor.privacyProtection)
@@ -63,6 +91,7 @@ enum SettingsDestination: Hashable {
 enum SettingsAnchor: String, CaseIterable, Hashable {
     case captureStatus = "capture-status"
     case captureOnce = "capture-once"
+    case captureDisplays = "capture-displays"
     case captureTiming = "capture-timing"
     case privacyPermissions = "privacy-permissions"
     case privacyProtection = "privacy-protection"
@@ -80,7 +109,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
 
     var section: SettingsSidebarItem {
         switch self {
-        case .captureStatus, .captureOnce, .captureTiming:
+        case .captureStatus, .captureOnce, .captureDisplays, .captureTiming:
             return .capture
         case .privacyPermissions, .privacyProtection, .privacyNetwork, .privacyLocalData:
             return .privacy
@@ -107,6 +136,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
         switch self {
         case .integrationsLocalTools: return "terminal"
         case .integrationsAssistantConnections: return "bubble.left.and.bubble.right"
+        case .captureDisplays: return "rectangle.on.rectangle"
         case .captureStatus, .captureOnce, .captureTiming: return "record.circle"
         case .privacyPermissions, .privacyProtection, .privacyNetwork, .privacyLocalData:
             return "hand.raised"
@@ -121,6 +151,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
         switch self {
         case .captureStatus: return "Capture status"
         case .captureOnce: return "Capture a moment"
+        case .captureDisplays: return "Capture displays"
         case .captureTiming: return "Capture timing"
         case .privacyPermissions: return "Screen capture permissions"
         case .privacyProtection: return "Privacy protection"
@@ -144,6 +175,11 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
             return ["recording", "running", "pause", "resume", "start", "health"]
         case .captureOnce:
             return ["manual", "capture now", "save moment", "screenshot"]
+        case .captureDisplays:
+            return [
+                "display", "displays", "monitor", "monitors", "multiple monitors", "multi-display",
+                "all screens", "active display",
+            ]
         case .captureTiming:
             return ["interval", "timer", "frequency", "inactive", "inactivity"]
         case .privacyPermissions:
@@ -258,7 +294,7 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .integrations: return "Terminal command and assistant connections"
         case .appearance: return "Theme and Timeline controls"
         case .shortcuts: return "Customize how you navigate and control Screenlogger"
-        case .capture: return "Recording quality, timing, and text recognition"
+        case .capture: return "Displays, timing, image quality, and text recognition"
         case .privacy: return "Permissions, protected activity, and Library data"
         case .storage: return "Library usage and retention"
         case .exclusions: return "Apps and detectable websites Screenlogger skips"
@@ -283,7 +319,10 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable, Hashable {
                 "customize", "disable", "reset", "conflict", "rebind",
             ]
         case .capture:
-            return [title, subtitle, "recording", "quality", "interval", "OCR", "text recognition", "encoding"]
+            return [
+                title, subtitle, "recording", "quality", "interval", "OCR", "text recognition",
+                "encoding", "display", "monitor", "multiple screens",
+            ]
         case .privacy:
             return [title, subtitle, "permission", "screen recording", "accessibility", "offline", "network", "local"]
         case .exclusions:

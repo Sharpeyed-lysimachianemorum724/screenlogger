@@ -9,6 +9,9 @@ public enum ProductPreferenceKey {
     public static let launchAtLogin = "screenlog.launchAtLogin"
     public static let showDockIcon = "screenlog.showDockIcon"
     public static let pauseOnInactivity = "screenlog.pauseOnInactivity"
+    /// Which connected displays are saved during each capture interval.
+    /// Missing keys preserve the original active-display behavior.
+    public static let captureDisplayMode = "screenlog.capture.displayMode"
     /// Persisted only after the user explicitly starts or stops capture.
     public static let captureEnabled = "screenlog.captureEnabled"
     /// Paired wall-clock values for a user-requested timed capture pause.
@@ -360,6 +363,23 @@ public enum StillEncodingPreference: String, CaseIterable, Identifiable, Sendabl
     }
 }
 
+/// The set of displays Screenlogger saves during one capture interval.
+public enum CaptureDisplayMode: String, CaseIterable, Identifiable, Sendable {
+    /// Follow the display containing the app the person is currently using.
+    case active
+    /// Save one moment for every display currently connected to the Mac.
+    case all
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .active: return "Active display"
+        case .all: return "All displays"
+        }
+    }
+}
+
 // MARK: - Capture / retention defaults (pure, unit-testable)
 
 /// UserDefaults keys + load/save for capture interval, quality, retention.
@@ -369,6 +389,7 @@ public enum CapturePreferenceStore {
     public static let maxDimension = "screenlog.maxDimension"
     public static let retentionDays = "screenlog.retentionDays"
     public static let storageCapMB = "screenlog.storageCapMB"
+    public static let displayMode = ProductPreferenceKey.captureDisplayMode
 
     public struct Snapshot: Equatable, Sendable {
         public var intervalSeconds: Double
@@ -379,6 +400,7 @@ public enum CapturePreferenceStore {
         public var stillEncoding: StillEncodingPreference
         public var ocrLanguagesCSV: String
         public var differentialOCR: Bool
+        public var displayMode: CaptureDisplayMode
 
         public init(
             intervalSeconds: Double = 2.0,
@@ -388,7 +410,8 @@ public enum CapturePreferenceStore {
             storageMode: StorageManagementMode = .limit,
             stillEncoding: StillEncodingPreference = .heic,
             ocrLanguagesCSV: String = "",
-            differentialOCR: Bool = true
+            differentialOCR: Bool = true,
+            displayMode: CaptureDisplayMode = .active
         ) {
             self.intervalSeconds = intervalSeconds
             self.maxDimension = maxDimension
@@ -398,6 +421,7 @@ public enum CapturePreferenceStore {
             self.stillEncoding = stillEncoding
             self.ocrLanguagesCSV = ocrLanguagesCSV
             self.differentialOCR = differentialOCR
+            self.displayMode = displayMode
         }
 
         public var ocrLanguages: [String] {
@@ -447,6 +471,11 @@ public enum CapturePreferenceStore {
         if defaults.object(forKey: ProductPreferenceKey.differentialOCR) != nil {
             s.differentialOCR = defaults.bool(forKey: ProductPreferenceKey.differentialOCR)
         }
+        if let raw = defaults.string(forKey: displayMode),
+            let mode = CaptureDisplayMode(rawValue: raw)
+        {
+            s.displayMode = mode
+        }
         return s
     }
 
@@ -459,5 +488,6 @@ public enum CapturePreferenceStore {
         defaults.set(snapshot.stillEncoding.rawValue, forKey: ProductPreferenceKey.stillEncoding)
         defaults.set(snapshot.ocrLanguagesCSV, forKey: ProductPreferenceKey.ocrLanguages)
         defaults.set(snapshot.differentialOCR, forKey: ProductPreferenceKey.differentialOCR)
+        defaults.set(snapshot.displayMode.rawValue, forKey: displayMode)
     }
 }

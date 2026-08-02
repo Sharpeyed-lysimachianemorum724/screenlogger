@@ -51,7 +51,7 @@ final class LibraryDeletionServiceTests: XCTestCase {
             store: store
         )
 
-        XCTAssertEqual(report.deletedFrameCount, 1)
+        XCTAssertEqual(report.deletedMomentCount, 1)
         XCTAssertEqual(report.deletedManagedFileCount, 1)
         XCTAssertFalse(report.cleanupPending)
         XCTAssertNil(try store.frame(id: id))
@@ -59,12 +59,33 @@ final class LibraryDeletionServiceTests: XCTestCase {
         XCTAssertTrue(try store.ftsSearch(query: "private deletion phrase", limit: 10).isEmpty)
     }
 
+    func testDeletingSynchronizedMomentRemovesEveryCapturedDisplay() throws {
+        let first = try seed(timestamp: 100, text: "main display")
+        let second = try seed(timestamp: 100, text: "second display")
+        let later = try seed(timestamp: 200, text: "later moment")
+        let plan = try service.prepare(selection: .moment(frameID: second), store: store)
+
+        XCTAssertEqual(plan.requestedMomentCount, 1)
+        XCTAssertEqual(plan.affectedMomentCount, 1)
+
+        let report = try service.delete(
+            plan,
+            confirmation: .userConfirmed(reviewID: plan.reviewID),
+            store: store
+        )
+
+        XCTAssertEqual(report.deletedMomentCount, 1)
+        XCTAssertNil(try store.frame(id: first))
+        XCTAssertNil(try store.frame(id: second))
+        XCTAssertNotNil(try store.frame(id: later))
+    }
+
     func testRangeIsHalfOpenAndReviewExpiresWhenSelectionChanges() throws {
         let first = try seed(timestamp: 100, text: "first")
         _ = try seed(timestamp: 199, text: "inside")
         let boundary = try seed(timestamp: 200, text: "boundary")
         let plan = try service.prepare(selection: .timeRange(startMs: 100, endMs: 200), store: store)
-        XCTAssertEqual(plan.requestedFrameCount, 2)
+        XCTAssertEqual(plan.requestedMomentCount, 2)
 
         _ = try seed(timestamp: 150, text: "arrived while sheet was open")
         XCTAssertThrowsError(
@@ -90,8 +111,8 @@ final class LibraryDeletionServiceTests: XCTestCase {
         try store.attachFrame(id: neighbor, videoID: videoID, videoIndex: 1)
 
         let plan = try service.prepare(selection: .moment(frameID: selected), store: store)
-        XCTAssertEqual(plan.requestedFrameCount, 1)
-        XCTAssertEqual(plan.affectedFrameCount, 2)
+        XCTAssertEqual(plan.requestedMomentCount, 1)
+        XCTAssertEqual(plan.affectedMomentCount, 2)
         XCTAssertEqual(plan.affectedVideoCount, 1)
 
         _ = try service.delete(
@@ -177,7 +198,7 @@ final class LibraryDeletionServiceTests: XCTestCase {
             confirmation: .userConfirmed(reviewID: plan.reviewID),
             store: store
         )
-        XCTAssertEqual(report.deletedFrameCount, 2)
+        XCTAssertEqual(report.deletedMomentCount, 2)
         XCTAssertEqual(try scalar("SELECT COUNT(*) FROM frame"), 0)
         XCTAssertEqual(try scalar("SELECT COUNT(*) FROM segment"), 0)
         XCTAssertEqual(try scalar("SELECT COUNT(*) FROM ocr_fts"), 0)
@@ -222,7 +243,7 @@ final class LibraryDeletionServiceTests: XCTestCase {
         let videoID = try store.insertVideo(path: path.path, numFrames: 0, sizeBytes: 512)
 
         let plan = try service.prepare(selection: .entireLibrary, store: store)
-        XCTAssertEqual(plan.requestedFrameCount, 0)
+        XCTAssertEqual(plan.requestedMomentCount, 0)
         XCTAssertEqual(plan.affectedVideoCount, 1)
         _ = try service.delete(
             plan,
@@ -245,7 +266,7 @@ final class LibraryDeletionServiceTests: XCTestCase {
         _ = try seed(timestamp: end, text: "tomorrow")
 
         let plan = try service.prepare(selection: selection, store: store)
-        XCTAssertEqual(plan.requestedFrameCount, 1)
+        XCTAssertEqual(plan.requestedMomentCount, 1)
     }
 
     func testStoreOpenRestoresInterruptedUncommittedDeletion() throws {

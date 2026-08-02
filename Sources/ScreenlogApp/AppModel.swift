@@ -26,6 +26,11 @@ final class AppModel: ObservableObject {
     }
     /// Rebuilt once per loaded window so selection-driven UI reads do not rescan the Timeline.
     var timelineNavigationIndex = TimelineNavigationIndex(frames: [])
+    /// Display choice survives single-display gaps while stepping or replaying.
+    /// It changes only when a new Timeline context is opened or the person
+    /// explicitly chooses another captured display.
+    var preferredTimelineDisplay: CaptureDisplayRect?
+    var preferredTimelineDisplayIndex: Int?
     /// Store bootstrap failure is independent from capture, permissions, search,
     /// and ordinary Timeline query errors.
     @Published var libraryStartupIssue: LibraryStartupIssue?
@@ -188,6 +193,17 @@ final class AppModel: ObservableObject {
             guard !isLoadingSettings else { return }
             preferences.set(pauseOnInactivity, forKey: ProductPreferenceKey.pauseOnInactivity)
             applySettingsToEngine()
+        }
+    }
+    @Published var captureDisplayMode: CaptureDisplayMode = .active {
+        didSet {
+            guard !isLoadingSettings else { return }
+            preferences.set(
+                captureDisplayMode.rawValue,
+                forKey: ProductPreferenceKey.captureDisplayMode
+            )
+            applySettingsToEngine()
+            updateStatusMessage()
         }
     }
     @Published var appearancePreference: AppearancePreference = .system {
@@ -648,11 +664,7 @@ final class AppModel: ObservableObject {
         } else if let captureIssue {
             statusMessage = captureIssue.title
         } else if isRecording {
-            let secs =
-                intervalSeconds == floor(intervalSeconds)
-                ? "\(Int(intervalSeconds))"
-                : String(format: "%.1f", intervalSeconds)
-            statusMessage = "Capturing every \(secs)s"
+            statusMessage = captureRunningStatusMessage
         } else if !permissions.isCaptureReady {
             statusMessage = "Finish Permissions setup to continue"
         } else {

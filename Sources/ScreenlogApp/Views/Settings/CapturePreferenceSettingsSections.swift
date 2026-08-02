@@ -1,5 +1,69 @@
+import AppKit
 import ScreenlogCore
 import SwiftUI
+
+struct CaptureDisplaySettingsSection: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var connectedDisplayCount = max(1, NSScreen.screens.count)
+
+    var body: some View {
+        SettingsCard {
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsCardRow(
+                    icon: "rectangle.on.rectangle",
+                    title: "Displays",
+                    subtitle: CaptureDisplaySettingsCopy.summary(model.captureDisplayMode)
+                ) {
+                    EmptyView()
+                }
+
+                Picker("Displays to capture", selection: $model.captureDisplayMode) {
+                    ForEach(CaptureDisplayMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel("Displays to capture")
+                .accessibilityValue(model.captureDisplayMode.label)
+                .accessibilityHint("Choose whether Screenlogger follows your active display or saves every connected display")
+                .accessibilityIdentifier("capture.displays.picker")
+
+                Label(
+                    CaptureDisplaySettingsCopy.connectionNote(
+                        model.captureDisplayMode,
+                        count: connectedDisplayCount
+                    ),
+                    systemImage: connectedDisplayCount > 1 ? "display.2" : "display"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                if model.captureDisplayMode == .all {
+                    Divider()
+
+                    Label(
+                        "Excluded apps are removed from every display. If the active app, website, or private browser is protected, the entire moment is skipped.",
+                        systemImage: "hand.raised"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("capture.displays.privacy-note")
+                }
+            }
+        }
+        .accessibilityIdentifier("capture.displays")
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didChangeScreenParametersNotification
+            )
+        ) { _ in
+            connectedDisplayCount = max(1, NSScreen.screens.count)
+        }
+    }
+}
 
 struct CaptureTimingSettingsSection: View {
     @EnvironmentObject private var model: AppModel

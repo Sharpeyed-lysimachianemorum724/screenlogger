@@ -30,11 +30,16 @@ extension StatusMenuController {
     func showCaptureOnceSuccessFeedback() {
         captureOnceFeedbackTask?.cancel()
         isShowingCaptureOnceSuccess = true
+        let displayCount = appModel.lastCaptureDisplayCount
+        let savedDescription =
+            displayCount > 1
+            ? "\(displayCount) searchable stills were saved to your Library."
+            : "One searchable still was saved to your Library."
         if let button = statusItem?.button {
             button.image = menuSymbolImage("checkmark.circle.fill")
             button.toolTip = "Screenlogger - capture saved"
             button.setAccessibilityLabel("Screenlogger - Capture saved")
-            button.setAccessibilityHelp("One searchable still was saved to your Library.")
+            button.setAccessibilityHelp(savedDescription)
             NSAccessibility.post(
                 element: NSApp as Any,
                 notification: .announcementRequested,
@@ -125,9 +130,9 @@ extension StatusMenuController {
                 if !appModel.permissions.isCaptureReady {
                     item.toolTip = "Finish Permissions setup first"
                 } else if modelCaptureOnceInProgress {
-                    item.toolTip = "Saving one searchable still to your Library"
+                    item.toolTip = appModel.captureNowDescription
                 } else {
-                    item.toolTip = "Save one searchable still without changing automatic capture"
+                    item.toolTip = appModel.captureNowDescription
                 }
             case .excludeFrontmost:
                 if let front {

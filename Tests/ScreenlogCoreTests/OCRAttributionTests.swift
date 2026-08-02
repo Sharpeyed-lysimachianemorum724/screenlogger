@@ -160,6 +160,35 @@ final class OCRAttributionTests: XCTestCase {
         XCTAssertFalse(attributed.foreground.contains("Other"))
     }
 
+    func testSecondaryDisplayWithoutFocusedWindowKeepsAllTextAsBackground() {
+        let windows = [
+            WindowBound(
+                bundleID: "dev.secondary",
+                x: 0,
+                y: 0,
+                width: 1_000,
+                height: 800,
+                zOrder: 0
+            )
+        ]
+        let result = makeResult([
+            ("Secondary context", 100, 100, 200, 24)
+        ])
+
+        let attributed = OCRService.attributeToForegroundBackground(
+            result: result,
+            imageWidth: imageW,
+            imageHeight: imageH,
+            captureDisplay: display,
+            windowBounds: windows,
+            foregroundBundleID: "dev.focused",
+            allowVisibleWindowFallback: false
+        )
+
+        XCTAssertEqual(attributed.foreground, "")
+        XCTAssertEqual(attributed.background, "Secondary context")
+    }
+
     func testFocusedWindowHelperPicksLowestZForBundle() {
         let windows = [
             WindowBound(bundleID: "dev.other", x: 0, y: 0, width: 100, height: 100, zOrder: 0),

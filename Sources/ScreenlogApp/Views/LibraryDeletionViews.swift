@@ -52,9 +52,9 @@ struct LibraryDeletionReviewSheet: View {
 
             GroupBox("Deletion Review") {
                 VStack(spacing: 0) {
-                    reviewRow("Selected", value: momentCount(review.plan.requestedFrameCount))
+                    reviewRow("Selected", value: momentCount(review.plan.requestedMomentCount))
                     Divider()
-                    reviewRow("Will be deleted", value: momentCount(review.plan.affectedFrameCount))
+                    reviewRow("Will be deleted", value: momentCount(review.plan.affectedMomentCount))
                     Divider()
                     reviewRow("Local files", value: "\(review.plan.managedFileCount)")
                     Divider()
@@ -63,8 +63,8 @@ struct LibraryDeletionReviewSheet: View {
                 .padding(.vertical, 2)
             }
 
-            if review.plan.affectedFrameCount > review.plan.requestedFrameCount {
-                let neighborCount = review.plan.affectedFrameCount - review.plan.requestedFrameCount
+            if review.plan.affectedMomentCount > review.plan.requestedMomentCount {
+                let neighborCount = review.plan.affectedMomentCount - review.plan.requestedMomentCount
                 Label(
                     "Some selected moments share a compressed video. Deleting it also removes \(neighborCount) neighboring \(neighborCount == 1 ? "moment" : "moments").",
                     systemImage: "exclamationmark.triangle.fill"
@@ -153,7 +153,7 @@ struct LibraryDeletionReviewSheet: View {
         .disabled(isDeleting)
         .accessibilityLabel(
             isDeleting
-                ? "Deleting \(momentCount(review.plan.affectedFrameCount))"
+                ? "Deleting \(momentCount(review.plan.affectedMomentCount))"
                 : "\(deleteActionTitle) permanently"
         )
         .accessibilityHint("This action cannot be undone")
@@ -166,7 +166,7 @@ struct LibraryDeletionReviewSheet: View {
     private var preferredContentHeight: CGFloat {
         var height: CGFloat = usesCompactSingleMomentLayout ? 330 : 450
 
-        if review.plan.affectedFrameCount > review.plan.requestedFrameCount {
+        if review.plan.affectedMomentCount > review.plan.requestedMomentCount {
             height += 52
         }
         if review.plan.missingFileCount > 0 || review.plan.unmanagedFileCount > 0 {
@@ -186,20 +186,20 @@ struct LibraryDeletionReviewSheet: View {
     }
 
     private var usesCompactSingleMomentLayout: Bool {
-        review.plan.requestedFrameCount == 1
-            && review.plan.affectedFrameCount == 1
+        review.plan.requestedMomentCount == 1
+            && review.plan.affectedMomentCount == 1
             && review.plan.missingFileCount == 0
             && review.plan.unmanagedFileCount == 0
             && issue == nil
     }
 
     private var deleteActionTitle: String {
-        let count = review.plan.affectedFrameCount
+        let count = review.plan.affectedMomentCount
         return count == 1 ? "Delete This Moment" : "Delete \(count) Moments"
     }
 
     private var deletingActionTitle: String {
-        let count = review.plan.affectedFrameCount
+        let count = review.plan.affectedMomentCount
         return count == 1 ? "Deleting This Moment..." : "Deleting \(count) Moments..."
     }
 

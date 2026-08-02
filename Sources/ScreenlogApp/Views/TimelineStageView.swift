@@ -94,7 +94,10 @@ extension HistoryPane {
                             .moment(frameID: frame.id),
                             origin: .timeline,
                             title: "Delete This Moment?",
-                            detail: "\(frame.appLabel) at \(SLTimeFormat.full(frame.timestampMs))."
+                            detail: TimelineDisplayPresentation.deletionDetail(
+                                frame: frame,
+                                displayCount: model.selectedTimelineMomentFrames.count
+                            )
                         )
                     }
                 } label: {
@@ -118,7 +121,15 @@ extension HistoryPane {
                     $0.imagePath == nil && $0.videoID == nil
                     ? ", preview unavailable"
                     : ""
-                return "\($0.appLabel), \(SLTimeFormat.full($0.timestampMs))\(availability)"
+                let displayContext =
+                    if model.selectedTimelineMomentFrames.count > 1,
+                        let index = model.selectedTimelineDisplayIndex
+                    {
+                        ", \(model.selectedTimelineDisplayLabel ?? "Display \(index + 1)"), \(index + 1) of \(model.selectedTimelineMomentFrames.count)"
+                    } else {
+                        ""
+                    }
+                return "\($0.appLabel), \(SLTimeFormat.full($0.timestampMs))\(displayContext)\(availability)"
             } ?? "No moment selected"
         )
         .accessibilityHint(stageAccessibilityHint)
@@ -132,6 +143,14 @@ extension HistoryPane {
             guard model.canStepForward else { return }
             model.stopReplay()
             model.stepTimeline(by: 1)
+        }
+        .accessibilityAction(named: Text("Previous display")) {
+            model.stopReplay()
+            model.stepTimelineDisplay(by: -1)
+        }
+        .accessibilityAction(named: Text("Next display")) {
+            model.stopReplay()
+            model.stepTimelineDisplay(by: 1)
         }
         .accessibilityAction(named: Text(model.isReplaying ? "Pause replay" : "Play through moments")) {
             TimelinePlaybackControl.toggle(model)

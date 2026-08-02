@@ -17,6 +17,8 @@ struct CaptureSettingsPane: View {
 
             CaptureOnceSettingsSection()
                 .settingsDestinationAnchor(.captureOnce)
+            CaptureDisplaySettingsSection()
+                .settingsDestinationAnchor(.captureDisplays)
             CaptureTimingSettingsSection()
                 .settingsDestinationAnchor(.captureTiming)
             CaptureImageSettingsSection()

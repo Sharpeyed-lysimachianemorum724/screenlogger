@@ -14,14 +14,14 @@ private let log = Logger(subsystem: "dev.screenlog", category: "compaction")
 /// Uses VideoToolbox directly through `AVAssetWriter`.
 ///
 /// Integrity rules:
-/// 1. Group into **contiguous** runs of the same resolution (and same capture display when known).
+/// 1. Group each display into chronological runs of the same resolution.
 /// 2. Split runs on large timestamp gaps - never stitch unrelated timeslices into one video.
 /// 3. Only mark/delete frames that were **actually** successfully encoded.
 /// 4. On encode failure: leave frames untouched, remove incomplete video, continue next run.
 public final class VideoCompactionService: @unchecked Sendable {
     /// Minimum unfinalized stills before a compaction pass starts.
     public var minBatchSize: Int = 30
-    /// Minimum frames in a single contiguous run to encode (need >=2 for a meaningful segment).
+    /// Minimum frames in one display run to encode (need >=2 for a meaningful segment).
     public var minRunSize: Int = 2
     /// Max gap between consecutive frames in a run. Larger gaps start a new run.
     /// Default 60s ~ 30 capture intervals at ~2s/frame.
@@ -139,33 +139,51 @@ public final class VideoCompactionService: @unchecked Sendable {
         public var resolutionKey: String { "\(width)x\(height)" }
     }
 
-    /// Maximal contiguous runs sharing resolution (+ display) without large timestamp gaps.
-    /// Frames must already be ordered by `(timestampMs, id)`.
+    /// Chronological runs sharing resolution and display without large gaps.
+    /// Frames from simultaneous multi-display captures are interleaved in the
+    /// database, so each display stream must be grouped independently.
     public static func buildResolutionRuns(
         frames: [UnfinalizedFrame],
         maxGapMs: Int64
     ) -> [[UnfinalizedFrame]] {
         guard !frames.isEmpty else { return [] }
-        var runs: [[UnfinalizedFrame]] = []
-        var current: [UnfinalizedFrame] = [frames[0]]
 
-        for i in 1..<frames.count {
-            let prev = frames[i - 1]
-            let frame = frames[i]
-            let sameResolution = frame.width == prev.width && frame.height == prev.height
-            let sameDisplay = frame.displayKey == prev.displayKey
-            let gap = frame.timestampMs - prev.timestampMs
-            let contiguousGap = gap >= 0 && gap <= maxGapMs
-
-            if sameResolution && sameDisplay && contiguousGap {
-                current.append(frame)
-            } else {
-                runs.append(current)
-                current = [frame]
-            }
+        struct StreamKey: Hashable {
+            var display: String?
         }
-        runs.append(current)
-        return runs
+
+        var streams: [StreamKey: [UnfinalizedFrame]] = [:]
+        for frame in frames {
+            let key = StreamKey(display: frame.displayKey)
+            streams[key, default: []].append(frame)
+        }
+
+        var runs: [[UnfinalizedFrame]] = []
+        for stream in streams.values {
+            let ordered = stream.sorted {
+                ($0.timestampMs, $0.id) < ($1.timestampMs, $1.id)
+            }
+            guard let first = ordered.first else { continue }
+            var current = [first]
+            for frame in ordered.dropFirst() {
+                guard let previous = current.last else { continue }
+                let gap = frame.timestampMs - previous.timestampMs
+                let sameResolution =
+                    frame.width == previous.width && frame.height == previous.height
+                if sameResolution, gap >= 0, gap <= maxGapMs {
+                    current.append(frame)
+                } else {
+                    runs.append(current)
+                    current = [frame]
+                }
+            }
+            runs.append(current)
+        }
+
+        return runs.sorted { lhs, rhs in
+            guard let left = lhs.first, let right = rhs.first else { return !lhs.isEmpty }
+            return (left.timestampMs, left.id) < (right.timestampMs, right.id)
+        }
     }
 
     private func loadUnfinalized(store: Store) throws -> [UnfinalizedFrame] {

@@ -124,18 +124,34 @@ public final class OCRService: @unchecked Sendable {
         imageHeight: Int,
         captureDisplay: CaptureDisplayRect?,
         windowBounds: [WindowBound],
-        foregroundBundleID: String?
+        foregroundBundleID: String?,
+        allowVisibleWindowFallback: Bool = true
     ) -> AttributedOCRResult {
         // No boxes / bad dims / no window geometry to full text is foreground.
         guard !result.boxes.isEmpty, imageWidth > 0, imageHeight > 0 else {
             return AttributedOCRResult(foreground: result.fullText, background: "", boxes: result.boxes)
         }
         guard !windowBounds.isEmpty else {
+            if !allowVisibleWindowFallback, foregroundBundleID != nil {
+                return AttributedOCRResult(
+                    foreground: "",
+                    background: result.fullText,
+                    boxes: result.boxes
+                )
+            }
             return AttributedOCRResult(foreground: result.fullText, background: "", boxes: result.boxes)
         }
 
         let sortedWindows = windowBounds.sorted { $0.zOrder < $1.zOrder }
-        let focusedWindow = Self.focusedWindow(in: sortedWindows, bundleID: foregroundBundleID)
+        let focusedWindow: WindowBound? =
+            if !allowVisibleWindowFallback,
+                let foregroundBundleID,
+                !foregroundBundleID.isEmpty
+            {
+                sortedWindows.first(where: { $0.bundleID == foregroundBundleID })
+            } else {
+                Self.focusedWindow(in: sortedWindows, bundleID: foregroundBundleID)
+            }
         let fgBundle = foregroundBundleID
 
         struct Piece {
@@ -181,6 +197,12 @@ public final class OCRService: @unchecked Sendable {
                     // Outside every window (desktop / menubar fringe) to background.
                     isFG = false
                 }
+            } else if !allowVisibleWindowFallback, foregroundBundleID != nil {
+                // A synchronized secondary display can have visible windows but
+                // no window from the globally focused app. Its OCR remains
+                // searchable background context instead of being attributed to
+                // an unrelated app on that display.
+                isFG = false
             } else if let hit = Self.frontmostWindow(containing: center, windows: sortedWindows) {
                 // No focused window identity: only the global frontmost window (zOrder 0) is FG.
                 isFG = hit.zOrder == 0 || hit.bundleID == sortedWindows.first?.bundleID

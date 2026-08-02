@@ -213,9 +213,9 @@ struct StorageDeletionStatusView: View {
     }
 
     private func successMessage(_ success: LibraryDeletionSuccess) -> String {
-        let momentLabel = success.deletedFrameCount == 1 ? "moment" : "moments"
+        let momentLabel = success.deletedMomentCount == 1 ? "moment" : "moments"
         let result =
-            "Deleted \(success.deletedFrameCount) \(momentLabel) and freed \(AppModel.formatByteSize(success.freedBytes))."
+            "Deleted \(success.deletedMomentCount) \(momentLabel) and freed \(AppModel.formatByteSize(success.freedBytes))."
         return success.cleanupPending
             ? "\(result) Screenlogger is finishing file cleanup."
             : result

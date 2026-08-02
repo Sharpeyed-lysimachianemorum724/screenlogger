@@ -54,6 +54,7 @@ import ScreenlogCore
             let snapshotsAtMinimumWindowSize: Bool
             let assistantScenario: AssistantScenario
             let firstRunFrameDelayMilliseconds: UInt64?
+            let seedsMultipleDisplays: Bool
         }
 
         /// Assistant discovery and readiness are explicit fixture inputs. The
@@ -204,7 +205,10 @@ import ScreenlogCore
                 assistantScenario: AssistantScenario.parse(environment: environment),
                 firstRunFrameDelayMilliseconds: environment[
                     "SCREENLOG_UI_TEST_FIRST_RUN_FRAME_DELAY_MS"
-                ].flatMap(UInt64.init)
+                ].flatMap(UInt64.init),
+                seedsMultipleDisplays: environment[
+                    "SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"
+                ] == "1"
             )
         }()
 
@@ -420,7 +424,8 @@ import ScreenlogCore
                     if configuration.seedsHistory {
                         try seedHistory(
                             in: store,
-                            usesUnreadablePreview: configuration.usesUnreadablePreview
+                            usesUnreadablePreview: configuration.usesUnreadablePreview,
+                            includesMultipleDisplays: configuration.seedsMultipleDisplays
                         )
                     }
                     await model.refreshData(light: false)
@@ -596,7 +601,8 @@ import ScreenlogCore
 
         private static func seedHistory(
             in store: Store,
-            usesUnreadablePreview: Bool
+            usesUnreadablePreview: Bool,
+            includesMultipleDisplays: Bool
         ) throws {
             let nowMs = Int64(Date().timeIntervalSince1970 * 1_000)
             let hourMs: Int64 = 60 * 60 * 1_000
@@ -686,6 +692,12 @@ import ScreenlogCore
 
             for (index, moment) in moments.enumerated() {
                 let isNewestMoment = index == moments.index(before: moments.endIndex)
+                let captureDisplay = CaptureDisplayRect(
+                    x: 0,
+                    y: 0,
+                    width: 1_728,
+                    height: 1_117
+                )
                 let imageData =
                     usesUnreadablePreview && isNewestMoment
                     ? Data("unreadable preview fixture".utf8)
@@ -712,9 +724,56 @@ import ScreenlogCore
                                 textLength: moment.foreground.utf16.count
                             )
                         ],
-                        imageFileExtension: "png"
+                        imageFileExtension: "png",
+                        captureDisplay: captureDisplay
                     )
                 )
+
+                if includesMultipleDisplays,
+                    index == moments.count - 1 || index == moments.count - 3
+                {
+                    let secondaryMoment = SeedMoment(
+                        offsetMs: moment.offsetMs,
+                        foreground: "Secondary display: \(moment.foreground)",
+                        title: moment.title,
+                        bundleID: moment.bundleID,
+                        displayName: moment.displayName,
+                        domain: moment.domain,
+                        url: moment.url,
+                        accent: NSColor.systemPurple
+                    )
+                    _ = try store.store(
+                        payload: CapturePayload(
+                            imageData: try fixtureImageData(for: secondaryMoment),
+                            timestampMs: nowMs + moment.offsetMs,
+                            width: 1_280,
+                            height: 800,
+                            foreground: secondaryMoment.foreground,
+                            title: secondaryMoment.title,
+                            bundleID: secondaryMoment.bundleID,
+                            displayName: secondaryMoment.displayName,
+                            url: secondaryMoment.url,
+                            domain: secondaryMoment.domain,
+                            ocrBoxes: [
+                                OCRBox(
+                                    x: 260,
+                                    y: 310,
+                                    width: 800,
+                                    height: 48,
+                                    textOffset: 0,
+                                    textLength: secondaryMoment.foreground.utf16.count
+                                )
+                            ],
+                            imageFileExtension: "png",
+                            captureDisplay: CaptureDisplayRect(
+                                x: 1_728,
+                                y: 0,
+                                width: 1_920,
+                                height: 1_080
+                            )
+                        )
+                    )
+                }
             }
         }
 

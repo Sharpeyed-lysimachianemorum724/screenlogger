@@ -4,7 +4,7 @@ import SwiftUI
 extension HistoryPane {
     /// Activity ribbon with proportional source bands and persistent time orientation.
     var segmentTrack: some View {
-        let frames = model.timeline
+        let frames = model.timelineMomentFrames
         return GeometryReader { geo in
             let w = max(geo.size.width, 1)
             let liveWindow = Self.timelineWindow(
@@ -219,6 +219,9 @@ extension HistoryPane {
                             Text(SLTimeFormat.shortTime(selected.timestampMs))
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.white.opacity(0.92))
+                                .accessibilityLabel("Selected moment")
+                                .accessibilityValue(timelinePositionAccessibilityValue)
+                                .accessibilityIdentifier("timeline.navigation.position")
                         }
                         Spacer()
                         Text(SLTimeFormat.shortTime(window.endMs))
@@ -415,9 +418,13 @@ extension HistoryPane {
 
     private var timelineAccessibilityValue: String {
         guard let selected = model.selectedTimelineFrame else { return "No moment selected" }
-        let position = model.selectedTimelineIndex.map { $0 + 1 }
-        let positionText = position.map { "moment \($0) of \(model.timeline.count)" } ?? "selected moment"
-        return "\(Self.sourceContextValue(selected)), \(positionText)"
+        return "\(Self.sourceContextValue(selected)), \(timelinePositionAccessibilityValue)"
+    }
+
+    private var timelinePositionAccessibilityValue: String {
+        model.selectedTimelineMomentIndex.map {
+            "moment \($0 + 1) of \(model.timelineMomentCount)"
+        } ?? "selected moment"
     }
 
     private static func sourceContextValue(_ frame: TimelineFrame) -> String {

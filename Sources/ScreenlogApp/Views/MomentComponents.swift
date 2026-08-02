@@ -50,39 +50,6 @@ enum SLAppIdentity {
     }
 }
 
-enum SLTimeFormat {
-    static func relative(_ timestampMs: Int64, relativeTo now: Date = Date()) -> String {
-        let date = Date(timeIntervalSince1970: TimeInterval(timestampMs) / 1000)
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: now)
-    }
-
-    static func shortTime(_ timestampMs: Int64) -> String {
-        let d = Date(timeIntervalSince1970: TimeInterval(timestampMs) / 1000)
-        return d.formatted(date: .omitted, time: .shortened)
-    }
-
-    static func full(_ timestampMs: Int64) -> String {
-        let d = Date(timeIntervalSince1970: TimeInterval(timestampMs) / 1000)
-        return d.formatted(date: .abbreviated, time: .standard)
-    }
-
-    static func dayLabel(_ timestampMs: Int64) -> String {
-        let d = Date(timeIntervalSince1970: TimeInterval(timestampMs) / 1000)
-        let cal = Calendar.current
-        if cal.isDateInToday(d) { return "Today" }
-        if cal.isDateInYesterday(d) { return "Yesterday" }
-        return d.formatted(date: .abbreviated, time: .omitted)
-    }
-
-    static func sameCalendarDay(_ a: Int64, _ b: Int64) -> Bool {
-        let da = Date(timeIntervalSince1970: TimeInterval(a) / 1000)
-        let db = Date(timeIntervalSince1970: TimeInterval(b) / 1000)
-        return Calendar.current.isDate(da, inSameDayAs: db)
-    }
-}
-
 // MARK: - App icon view
 
 struct SLAppIconView: View {

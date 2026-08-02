@@ -10,10 +10,30 @@ Screenlogger has three product targets:
 
 ## Capture path
 
-The capture engine selects a display, captures a still, reads application and
-website context, performs on-device recognition, applies exclusions, and writes
-one transaction through `Store`. Capture pauses on missing permission, excluded
-activity, strict privacy uncertainty, inactivity when enabled, or low disk space.
+The capture engine reads one ScreenCaptureKit snapshot and captures either the
+active display or every connected display, according to the Capture setting.
+Every successful image from an all-display interval receives the same timestamp
+and its global display geometry. Excluded applications are removed from each
+ScreenCaptureKit content filter before pixels are captured. Website protections
+continue to follow the active browser.
+
+Recognition and storage run independently for each captured display. A partial
+display failure does not discard the other successful images. Capture pauses on
+missing permission, excluded frontmost activity, strict privacy uncertainty,
+inactivity when enabled, or low disk space.
+
+## Timeline model
+
+A timestamp is one Timeline moment. A single-display moment has one frame; an
+all-display moment can have several frames distinguished by display geometry.
+The Timeline shows one display at its natural aspect ratio with a display
+switcher when the selected moment contains more than one. Time navigation and
+replay advance between timestamps and preserve the chosen display when possible.
+
+Queries limit and count moments rather than physical frames. Search may open the
+specific display that matched. Deleting a moment removes every display frame at
+that timestamp. Compaction groups each display geometry into its own video
+sequence so simultaneous frames are never interleaved into one movie.
 
 ## Storage
 

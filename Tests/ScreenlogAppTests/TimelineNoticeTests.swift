@@ -1,4 +1,5 @@
 import Foundation
+import ScreenlogCore
 import XCTest
 
 final class TimelineNoticeTests: XCTestCase {
@@ -75,6 +76,34 @@ final class TimelineNoticeTests: XCTestCase {
         XCTAssertEqual(
             TimelineNotice(.momentsDeleted(count: 3, cleanupPending: true)).message,
             "Deleted 3 moments - finishing file cleanup"
+        )
+    }
+
+    func testTimelineDisplayLabelsStayDistinctForMainAndMirroredGeometry() {
+        let main = TimelineFrame(
+            id: 1,
+            timestampMs: 1,
+            captureDisplay: CaptureDisplayRect(x: 0, y: 0, width: 1_728, height: 1_117)
+        )
+        let external = TimelineFrame(
+            id: 2,
+            timestampMs: 1,
+            captureDisplay: CaptureDisplayRect(x: 1_728, y: 0, width: 1_920, height: 1_080)
+        )
+
+        XCTAssertEqual(TimelineDisplayPresentation.label(for: 0, in: [main, external]), "Main Display")
+        XCTAssertEqual(TimelineDisplayPresentation.label(for: 1, in: [main, external]), "Display 2")
+
+        let mirrored = [main, TimelineFrame(id: 3, timestampMs: 1, captureDisplay: main.captureDisplay)]
+        XCTAssertEqual(TimelineDisplayPresentation.label(for: 0, in: mirrored), "Display 1")
+        XCTAssertEqual(TimelineDisplayPresentation.label(for: 1, in: mirrored), "Display 2")
+    }
+
+    func testTimelineDeletionCopyExplainsMultiDisplayScope() {
+        let frame = TimelineFrame(id: 1, timestampMs: 1)
+        XCTAssertTrue(
+            TimelineDisplayPresentation.deletionDetail(frame: frame, displayCount: 2)
+                .contains("removes all 2 display captures")
         )
     }
 }

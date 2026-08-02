@@ -84,6 +84,8 @@ SPARKLE_INSTALLER="$SPARKLE_VERSION/XPCServices/Installer.xpc"
 SPARKLE_AUTOUPDATE="$SPARKLE_VERSION/Autoupdate"
 BUNDLED_CLI="$APP/Contents/MacOS/screenlog"
 CLI_FRAMEWORK="$CLI_DIRECTORY/ScreenlogCore.framework"
+DEVELOPMENT_DYLIB="$APP/Contents/MacOS/Screenlogger.debug.dylib"
+PREVIEW_DYLIB="$APP/Contents/MacOS/__preview.dylib"
 
 if ! command -v codesign >/dev/null 2>&1; then
   echo "error: required signing tool is unavailable: codesign" >&2
@@ -168,6 +170,15 @@ sign_sparkle_artifact "$SPARKLE_VERSION" \
   "org.sparkle-project.Sparkle"
 sign_artifact "$APP_FRAMEWORK" "dev.screenlog.core"
 sign_artifact "$BUNDLED_CLI" "dev.screenlog.cli"
+# Debug builds use install-name indirection through these two dylibs. They are
+# absent from release archives, but signing them when present keeps a locally
+# staged Developer ID build launchable under library validation.
+if [[ -f "$DEVELOPMENT_DYLIB" && ! -L "$DEVELOPMENT_DYLIB" ]]; then
+  sign_artifact "$DEVELOPMENT_DYLIB" "dev.screenlog.app.debug"
+fi
+if [[ -f "$PREVIEW_DYLIB" && ! -L "$PREVIEW_DYLIB" ]]; then
+  sign_artifact "$PREVIEW_DYLIB" "dev.screenlog.app.preview"
+fi
 /usr/bin/codesign \
   --force \
   --sign "$IDENTITY" \
@@ -211,6 +222,15 @@ for artifact in \
   "$BUNDLED_CLI" \
   "$CLI_FRAMEWORK" \
   "$CLI"; do
+  artifact_team_id="$(team_id_for "$artifact")"
+  if [[ "$artifact_team_id" != "$APP_TEAM_ID" ]]; then
+    echo "error: nested signature Team ID mismatch: $artifact" >&2
+    exit 1
+  fi
+done
+
+for artifact in "$DEVELOPMENT_DYLIB" "$PREVIEW_DYLIB"; do
+  [[ -f "$artifact" && ! -L "$artifact" ]] || continue
   artifact_team_id="$(team_id_for "$artifact")"
   if [[ "$artifact_team_id" != "$APP_TEAM_ID" ]]; then
     echo "error: nested signature Team ID mismatch: $artifact" >&2

@@ -81,25 +81,25 @@ extension AppModel {
             }
             refreshLibrarySize()
 
-            let momentLabel = report.deletedFrameCount == 1 ? "moment" : "moments"
+            let momentLabel = report.deletedMomentCount == 1 ? "moment" : "moments"
             if review.origin == .timeline {
                 publishTimelineNotice(
                     .momentsDeleted(
-                        count: report.deletedFrameCount,
+                        count: report.deletedMomentCount,
                         cleanupPending: report.cleanupPending
                     )
                 )
                 updateStatusMessage()
             } else {
                 libraryDeletionSuccess = LibraryDeletionSuccess(
-                    deletedFrameCount: report.deletedFrameCount,
+                    deletedMomentCount: report.deletedMomentCount,
                     freedBytes: report.freedBytes,
                     cleanupPending: report.cleanupPending
                 )
                 statusMessage =
                     report.cleanupPending
                     ? "Deleted history - finishing file cleanup"
-                    : "Deleted \(report.deletedFrameCount) \(momentLabel)"
+                    : "Deleted \(report.deletedMomentCount) \(momentLabel)"
             }
         } catch {
             let request = LibraryDeletionRequest(

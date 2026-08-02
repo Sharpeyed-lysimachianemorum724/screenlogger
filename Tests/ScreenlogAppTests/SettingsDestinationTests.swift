@@ -74,6 +74,27 @@ final class SettingsDestinationTests: XCTestCase {
             SettingsSearchResult.matching("retention").map(\.destination),
             [.storageManagement]
         )
+        XCTAssertEqual(
+            SettingsSearchResult.matching("multiple monitors").map(\.destination),
+            [.captureDisplays]
+        )
+    }
+
+    func testCaptureDisplayCopyExplainsCoverageAndCost() {
+        XCTAssertEqual(
+            CaptureDisplaySettingsCopy.summary(.active),
+            "Follows the display containing the app you are using."
+        )
+        XCTAssertTrue(
+            CaptureDisplaySettingsCopy.connectionNote(.all, count: 2).contains(
+                "one Timeline moment with 2 display images"
+            )
+        )
+        XCTAssertTrue(
+            CaptureDisplaySettingsCopy.connectionNote(.all, count: 1).contains(
+                "included automatically"
+            )
+        )
     }
 
     func testSearchResultsExposeStableActivationIdentifiers() throws {

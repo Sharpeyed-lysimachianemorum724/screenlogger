@@ -24,7 +24,7 @@ struct LibraryDeletionReview: Identifiable, Sendable {
 }
 
 struct LibraryDeletionSuccess: Equatable, Sendable {
-    let deletedFrameCount: Int
+    let deletedMomentCount: Int
     let freedBytes: Int64
     let cleanupPending: Bool
 }

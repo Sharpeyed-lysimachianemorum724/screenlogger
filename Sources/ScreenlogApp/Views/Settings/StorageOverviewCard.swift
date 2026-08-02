@@ -93,7 +93,7 @@ struct StorageOverviewCard: View {
 
     private var savedMomentsValue: String {
         guard let stats = model.stats else { return "-" }
-        return stats.totalFrames.formatted()
+        return stats.momentCount.formatted()
     }
 
     private var measurement: StorageMeasurement? {

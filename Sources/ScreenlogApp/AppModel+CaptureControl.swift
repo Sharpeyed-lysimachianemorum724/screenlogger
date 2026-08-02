@@ -114,11 +114,7 @@ extension AppModel {
         synchronizeRecordingState()
         if started {
             captureIssue = nil
-            let secs =
-                intervalSeconds == floor(intervalSeconds)
-                ? "\(Int(intervalSeconds))"
-                : String(format: "%.1f", intervalSeconds)
-            statusMessage = "Capturing every \(secs)s"
+            statusMessage = captureRunningStatusMessage
         } else {
             captureIssue = .startFailed
             statusMessage = "Couldn't start capture"
@@ -357,7 +353,10 @@ extension AppModel {
             applySettingsToEngine()
             let id = try await engine.captureOneNow()
             captureOnceState = .success(frameID: id)
-            statusMessage = "Saved a capture"
+            statusMessage =
+                engine.lastCycleFrameCount > 1
+                ? "Saved \(engine.lastCycleFrameCount) displays"
+                : "Saved a capture"
             // `lastFrameID` publishes after the durable write and drives the
             // Library refresh; avoid issuing a duplicate Timeline query here.
         } catch {
@@ -375,6 +374,29 @@ extension AppModel {
                 statusMessage = "Couldn't save capture"
             }
         }
+    }
+
+    var lastCaptureDisplayCount: Int {
+        max(1, engine.lastCycleFrameCount)
+    }
+
+    var captureNowDescription: String {
+        switch captureDisplayMode {
+        case .active:
+            return "Save the active display without changing automatic capture"
+        case .all:
+            return "Save every connected display without changing automatic capture"
+        }
+    }
+
+    var captureRunningStatusMessage: String {
+        let seconds =
+            intervalSeconds == floor(intervalSeconds)
+            ? "\(Int(intervalSeconds))"
+            : String(format: "%.1f", intervalSeconds)
+        return captureDisplayMode == .all
+            ? "Capturing all displays every \(seconds)s"
+            : "Capturing every \(seconds)s"
     }
 
     /// Clears only the permission failure that is no longer actionable. Other

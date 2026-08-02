@@ -60,8 +60,8 @@ public struct LibrarySearchPage: Equatable, Sendable {
 }
 
 /// Exclusive lower bound for Library keyset pagination. Search results are
-/// ordered newest-first by `(timestamp, frame id)`, so this pair remains
-/// deterministic even when many captures share one timestamp.
+/// ordered newest-first by moment timestamp. `frameID` identifies the exact
+/// display selected for that moment and remains available for compatibility.
 public struct LibrarySearchCursor: Equatable, Sendable {
     public let timestampMs: Int64
     public let frameID: Int64
@@ -211,24 +211,40 @@ extension Store {
             whereParts.append("f.timestamp <= ?")
         }
         if cursor != nil {
-            whereParts.append("(f.timestamp < ? OR (f.timestamp = ? AND f.id < ?))")
+            whereParts.append("f.timestamp < ?")
         }
         let whereSQL = whereParts.joined(separator: " AND ")
 
         let snippetColumns =
             usesFTS
             ? """
-            snippet(ocr_fts, 0, '[', ']', '...', 16),
-            snippet(ocr_fts, 1, '[', ']', '...', 16),
-            snippet(ocr_fts, 2, '[', ']', '...', 16)
+            snippet(ocr_fts, 0, '[', ']', '...', 16) AS snippet_foreground,
+            snippet(ocr_fts, 1, '[', ']', '...', 16) AS snippet_background,
+            snippet(ocr_fts, 2, '[', ']', '...', 16) AS snippet_title
             """
-            : "substr(f.foreground, 1, 161), substr(f.background, 1, 161), substr(f.title, 1, 161)"
+            : """
+            substr(f.foreground, 1, 161) AS snippet_foreground,
+            substr(f.background, 1, 161) AS snippet_background,
+            substr(f.title, 1, 161) AS snippet_title
+            """
         let source =
             usesFTS
             ? "ocr_fts JOIN frame f ON f.id = ocr_fts.rowid"
             : "frame f"
+        let outerMatchSQL = usesFTS ? "WHERE ocr_fts MATCH ?" : ""
 
         let sql = """
+            WITH matching_moments AS (
+                SELECT MAX(f.id) AS frame_id, f.timestamp AS timestamp_ms
+                FROM \(source)
+                LEFT JOIN segment s ON s.id = f.segment
+                LEFT JOIN application a ON a.id = s.application
+                LEFT JOIN domain d ON d.id = s.domain
+                WHERE \(whereSQL)
+                GROUP BY f.timestamp
+                ORDER BY f.timestamp DESC
+                LIMIT ?
+            )
             SELECT
                 f.id,
                 f.timestamp,
@@ -240,12 +256,12 @@ extension Store {
                 f.image_path,
                 f.video
             FROM \(source)
+            JOIN matching_moments m ON m.frame_id = f.id
             LEFT JOIN segment s ON s.id = f.segment
             LEFT JOIN application a ON a.id = s.application
             LEFT JOIN domain d ON d.id = s.domain
-            WHERE \(whereSQL)
+            \(outerMatchSQL)
             ORDER BY f.timestamp DESC, f.id DESC
-            LIMIT ?
             """
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
@@ -282,11 +298,13 @@ extension Store {
         }
         if let cursor {
             SQLiteBind.int64(stmt, bind, cursor.timestampMs)
-            SQLiteBind.int64(stmt, bind + 1, cursor.timestampMs)
-            SQLiteBind.int64(stmt, bind + 2, cursor.frameID)
-            bind += 3
+            bind += 1
         }
         SQLiteBind.int(stmt, bind, min(maximumLimit, max(1, requestedLimit)))
+        bind += 1
+        if usesFTS {
+            SQLiteBind.text(stmt, bind, match)
+        }
         var results: [FTSResult] = []
         var stepResult = sqlite3_step(stmt)
         while stepResult == SQLITE_ROW {

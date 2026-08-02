@@ -821,6 +821,36 @@ final class ScreenlogAppUITests: XCTestCase {
         )
     }
 
+    func testCaptureDisplayCoverageIsSearchableAndSelectable() throws {
+        let app = try launch(route: "--open-library", fixture: true)
+        assertElement(identifier: "navigation.library.settings", in: app).click()
+        assertWindow("Settings", in: app)
+
+        let search = app.searchFields["Search Settings"]
+        XCTAssertTrue(search.waitForExistence(timeout: Self.routeTimeout))
+        search.click()
+        search.typeText("multiple monitors")
+        assertElement(
+            identifier: "settings.search-result.capture-displays",
+            in: app
+        ).click()
+
+        let destination = assertElement(
+            identifier: "settings.destination.capture-displays",
+            in: app
+        )
+        XCTAssertEqual(destination.label, "Capture displays")
+
+        let picker = assertElement(identifier: "capture.displays.picker", in: app)
+        XCTAssertTrue(picker.isHittable)
+        XCTAssertEqual(picker.value as? String, "Active display")
+
+        let allDisplays = assertControl(label: "All displays", in: app)
+        allDisplays.click()
+        XCTAssertEqual(picker.value as? String, "All displays")
+        assertElement(identifier: "capture.displays.privacy-note", in: app)
+    }
+
     func testSettingsSearchReturnOpensTheFirstResultAndEscapeClearsTheQuery() throws {
         let app = try launch(route: "--open-library")
         assertElement(identifier: "navigation.library.settings", in: app).click()
@@ -1426,6 +1456,53 @@ final class ScreenlogAppUITests: XCTestCase {
         )
     }
 
+    func testTimelineGroupsMultipleDisplaysIntoOneNavigableMoment() throws {
+        let app = try launch(
+            route: "--open-timeline",
+            fixture: true,
+            multipleDisplays: true
+        )
+        assertWindow("Timeline", in: app)
+
+        assertElement(identifier: "timeline.display.switcher", in: app)
+        let picker = assertElement(identifier: "timeline.display.picker", in: app)
+        XCTAssertEqual(picker.value as? String, "Display 2")
+        let navigationValue =
+            assertElement(identifier: "timeline.navigation.position", in: app).value as? String ?? ""
+        XCTAssertTrue(
+            navigationValue.contains("moment 8 of 8"),
+            "Unexpected Timeline navigation value: \(navigationValue)"
+        )
+        assertElement(identifier: "timeline.moment", in: app)
+
+        assertControl(label: "Main Display", in: app).click()
+        XCTAssertEqual(picker.value as? String, "Main Display")
+
+        assertControl(label: "Display 2", in: app).click()
+        assertElement(identifier: "timeline.playback.previous", in: app).click()
+        assertElementDoesNotExist(
+            identifier: "timeline.display.switcher",
+            in: app,
+            description: "display switcher on a single-display moment"
+        )
+        assertElement(identifier: "timeline.playback.previous", in: app).click()
+        XCTAssertEqual(
+            assertElement(identifier: "timeline.display.picker", in: app).value as? String,
+            "Display 2"
+        )
+        assertElement(identifier: "timeline.playback.next", in: app).click()
+        assertElementDoesNotExist(
+            identifier: "timeline.display.switcher",
+            in: app,
+            description: "display switcher after returning to a single-display moment"
+        )
+        assertElement(identifier: "timeline.playback.next", in: app).click()
+        XCTAssertEqual(
+            assertElement(identifier: "timeline.display.picker", in: app).value as? String,
+            "Display 2"
+        )
+    }
+
     func testCaptureFailureOffersScopedRetryAndClearsAfterRecovery() throws {
         let app = try launch(
             route: "--open-timeline",
@@ -1695,6 +1772,7 @@ final class ScreenlogAppUITests: XCTestCase {
         simulatedMissingAccessibilityPermission: Bool = false,
         simulatedUnreadablePreview: Bool = false,
         selectSessionAfterLoad: Bool = false,
+        multipleDisplays: Bool = false,
         assistantDetected: [AssistantFixtureTarget] = [],
         assistantReady: [AssistantFixtureTarget] = [],
         assistantRouting: AssistantFixtureRouting = .automatic
@@ -1750,6 +1828,9 @@ final class ScreenlogAppUITests: XCTestCase {
             }
             if selectSessionAfterLoad {
                 application.launchEnvironment["SCREENLOG_UI_TEST_SELECT_SESSION_AFTER_LOAD"] = "1"
+            }
+            if multipleDisplays {
+                application.launchEnvironment["SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"] = "1"
             }
             application.launchEnvironment["SCREENLOG_UI_TEST_DETECTED_ASSISTANTS"] =
                 assistantDetected.map(\.rawValue).joined(separator: ",")

@@ -45,13 +45,14 @@ extension AppModel {
                         before: 40,
                         after: 40
                     )
-                    .sorted { $0.id < $1.id }
+                    .sorted(by: TimelineFrame.chronologicalAscending)
                 }
                 if let loadedSession {
                     return try store.timeline(session: loadedSession, limit: 500)
-                        .sorted { $0.id < $1.id }
+                        .sorted(by: TimelineFrame.chronologicalAscending)
                 }
-                return try store.recentTimeline(limit: 100).sorted { $0.id < $1.id }
+                return try store.recentTimeline(limit: 100)
+                    .sorted(by: TimelineFrame.chronologicalAscending)
             }
             let previousSelection = selectedTimelineID
             if selectRecentActivity {
@@ -70,16 +71,17 @@ extension AppModel {
                 selectedTimelineID = previousSelection
             } else {
                 selectedTimelineID = frames.last?.id
+                rememberTimelineDisplayPreference(frameID: selectedTimelineID)
             }
             timelineLoadState = .ready
             if loadedSession != nil {
                 publishTimelineNotice(
-                    .timelineLoaded(scope: .session, momentCount: frames.count),
+                    .timelineLoaded(scope: .session, momentCount: timelineMomentCount),
                     announce: announceResult
                 )
             } else {
                 publishTimelineNotice(
-                    .timelineLoaded(scope: .recent, momentCount: frames.count),
+                    .timelineLoaded(scope: .recent, momentCount: timelineMomentCount),
                     announce: announceResult
                 )
             }
@@ -248,29 +250,117 @@ extension AppModel {
         return timelineNavigationIndex.position(of: id)
     }
 
+    /// Position within synchronized capture intervals rather than physical
+    /// display frames. Replay and arrow navigation use this unit.
+    var selectedTimelineMomentIndex: Int? {
+        guard let id = selectedTimelineID else { return nil }
+        return timelineNavigationIndex.momentPosition(of: id)
+    }
+
+    var timelineMomentCount: Int {
+        timelineNavigationIndex.momentCount
+    }
+
+    /// One representative per timestamp for ribbons, counts, and time mapping.
+    var timelineMomentFrames: [TimelineFrame] {
+        timelineNavigationIndex.representativeFramePositions.compactMap { position in
+            timeline.indices.contains(position) ? timeline[position] : nil
+        }
+    }
+
+    /// Every captured display belonging to the selected synchronized moment,
+    /// ordered by its physical arrangement from left to right.
+    var selectedTimelineMomentFrames: [TimelineFrame] {
+        guard let id = selectedTimelineID else { return [] }
+        let frames = timelineNavigationIndex.framePositions(inMomentContaining: id)
+            .compactMap { position in
+                timeline.indices.contains(position) ? timeline[position] : nil
+            }
+        return displayOrdered(frames)
+    }
+
+    var selectedTimelineDisplayIndex: Int? {
+        guard let selectedTimelineID else { return nil }
+        return selectedTimelineMomentFrames.firstIndex(where: { $0.id == selectedTimelineID })
+    }
+
+    var selectedTimelineDisplayLabel: String? {
+        let displays = selectedTimelineMomentFrames
+        guard displays.count > 1,
+            let index = selectedTimelineDisplayIndex
+        else { return nil }
+        return TimelineDisplayPresentation.label(for: index, in: displays)
+    }
+
     var canStepBack: Bool {
-        guard let i = selectedTimelineIndex else { return false }
+        guard let i = selectedTimelineMomentIndex else { return false }
         return i > 0
     }
 
     var canStepForward: Bool {
-        guard let i = selectedTimelineIndex else { return false }
-        return i + 1 < timeline.count
+        guard let i = selectedTimelineMomentIndex else { return false }
+        return i + 1 < timelineMomentCount
     }
 
     /// Select a timeline frame (loads still or video frame for replay stage).
     func selectTimelineFrame(id: Int64?) {
-        selectedTimelineID = id
+        guard let id else {
+            selectedTimelineID = nil
+            return
+        }
+        guard let moment = timelineNavigationIndex.momentPosition(of: id) else { return }
+        selectTimelineMoment(at: moment)
+    }
+
+    func selectTimelineDisplay(frameID: Int64) {
+        let displays = selectedTimelineMomentFrames
+        guard let index = displays.firstIndex(where: { $0.id == frameID }) else { return }
+        preferredTimelineDisplay = displays[index].captureDisplay
+        preferredTimelineDisplayIndex = index
+        selectedTimelineID = frameID
+    }
+
+    func selectFirstTimelineMoment() {
+        let frames = displayOrdered(
+            timelineNavigationIndex.framePositions(inMoment: 0)
+                .compactMap { position in
+                    timeline.indices.contains(position) ? timeline[position] : nil
+                }
+        )
+        guard let frame = frames.last else {
+            selectedTimelineID = nil
+            return
+        }
+        let target =
+            frames.first(where: { $0.captureDisplay == preferredTimelineDisplay })
+            ?? preferredTimelineDisplayIndex.flatMap { index in
+                frames.indices.contains(index) ? frames[index] : nil
+            }
+            ?? frame
+        if preferredTimelineDisplay == nil {
+            preferredTimelineDisplay = target.captureDisplay
+            preferredTimelineDisplayIndex = frames.firstIndex(where: { $0.id == target.id })
+        }
+        selectedTimelineID = target.id
     }
 
     /// Decode nearby stills at a small bounded size without blocking timeline interaction.
     private func scheduleNeighborPrefetch(around id: Int64) {
         prefetchTask?.cancel()
-        guard let idx = timelineNavigationIndex.position(of: id) else { return }
+        guard let momentIndex = timelineNavigationIndex.momentPosition(of: id),
+            let selected = selectedTimelineFrame
+        else { return }
         let radius = TimelinePreviewPolicy.neighborRadius
-        let neighbors = [idx - radius, idx + radius]
-            .filter { $0 >= 0 && $0 < timeline.count }
-            .map { timeline[$0] }
+        let neighbors = [momentIndex - radius, momentIndex + radius]
+            .filter { $0 >= 0 && $0 < timelineMomentCount }
+            .compactMap { targetMoment -> TimelineFrame? in
+                let frames = timelineNavigationIndex.framePositions(inMoment: targetMoment)
+                    .compactMap { position in
+                        timeline.indices.contains(position) ? timeline[position] : nil
+                    }
+                return frames.first(where: { $0.captureDisplay == selected.captureDisplay })
+                    ?? frames.last
+            }
             .compactMap { frame -> (id: Int64, path: String)? in
                 let key = previewCacheKey(
                     frameID: frame.id,
@@ -328,17 +418,80 @@ extension AppModel {
         guard !timeline.isEmpty else { return }
         normalizeTimelineChronologyIfNeeded()
         guard let current = selectedTimelineID,
-            let idx = timelineNavigationIndex.position(of: current)
+            let momentIndex = timelineNavigationIndex.momentPosition(of: current)
         else {
-            selectedTimelineID = timeline.first?.id
+            selectFirstTimelineMoment()
             return
         }
-        let next = idx + delta
-        guard timeline.indices.contains(next) else {
+        let targetMoment = momentIndex + delta
+        guard targetMoment >= 0, targetMoment < timelineMomentCount else {
             stopReplay()
             return
         }
-        selectedTimelineID = timeline[next].id
+        selectTimelineMoment(at: targetMoment)
+    }
+
+    func selectTimelineMoment(at targetMoment: Int) {
+        guard targetMoment >= 0, targetMoment < timelineMomentCount else { return }
+        let currentFrame = selectedTimelineFrame
+        let currentDisplayIndex = selectedTimelineDisplayIndex
+        if preferredTimelineDisplay == nil,
+            selectedTimelineMomentFrames.count > 1
+        {
+            preferredTimelineDisplay = currentFrame?.captureDisplay
+            preferredTimelineDisplayIndex = currentDisplayIndex
+        }
+        let targetFrames = displayOrdered(
+            timelineNavigationIndex.framePositions(inMoment: targetMoment)
+                .compactMap { position in
+                    timeline.indices.contains(position) ? timeline[position] : nil
+                }
+        )
+        let target =
+            targetFrames.first(where: {
+                $0.captureDisplay == preferredTimelineDisplay
+            })
+            ?? preferredTimelineDisplayIndex.flatMap { index in
+                targetFrames.indices.contains(index) ? targetFrames[index] : nil
+            }
+            ?? targetFrames.first(where: {
+                $0.captureDisplay == currentFrame?.captureDisplay
+            })
+            ?? currentDisplayIndex.flatMap { index in
+                targetFrames.indices.contains(index) ? targetFrames[index] : nil
+            }
+            ?? targetFrames.last
+        selectedTimelineID = target?.id
+    }
+
+    func stepTimelineDisplay(by delta: Int) {
+        let displays = selectedTimelineMomentFrames
+        guard displays.count > 1,
+            let current = selectedTimelineDisplayIndex
+        else { return }
+        let target = current + delta
+        guard displays.indices.contains(target) else { return }
+        selectTimelineDisplay(frameID: displays[target].id)
+    }
+
+    func rememberTimelineDisplayPreference(frameID: Int64?) {
+        guard let frameID,
+            let position = timelineNavigationIndex.position(of: frameID),
+            timeline.indices.contains(position)
+        else {
+            preferredTimelineDisplay = nil
+            preferredTimelineDisplayIndex = nil
+            return
+        }
+        let frames = displayOrdered(
+            timelineNavigationIndex.framePositions(inMomentContaining: frameID)
+                .compactMap { momentPosition in
+                    timeline.indices.contains(momentPosition) ? timeline[momentPosition] : nil
+                }
+        )
+        guard let index = frames.firstIndex(where: { $0.id == frameID }) else { return }
+        preferredTimelineDisplay = timeline[position].captureDisplay
+        preferredTimelineDisplayIndex = index
     }
 
     func startReplay(intervalMs: UInt64 = 650) {
@@ -346,7 +499,7 @@ extension AppModel {
         isReplaying = true
         normalizeTimelineChronologyIfNeeded()
         if selectedTimelineID == nil {
-            selectedTimelineID = timeline.first?.id
+            selectFirstTimelineMoment()
         }
         replayTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -378,7 +531,26 @@ extension AppModel {
     /// avoiding a full sort on every steady-state navigation command.
     func normalizeTimelineChronologyIfNeeded() {
         guard !timelineNavigationIndex.isChronological else { return }
-        timeline = timeline.sorted { $0.id < $1.id }
+        timeline = timeline.sorted(by: TimelineFrame.chronologicalAscending)
+    }
+
+    private func displayOrdered(_ frames: [TimelineFrame]) -> [TimelineFrame] {
+        frames.sorted { lhs, rhs in
+            switch (lhs.captureDisplay, rhs.captureDisplay) {
+            case (.some(let left), .some(let right)):
+                if left.x != right.x { return left.x < right.x }
+                if left.y != right.y { return left.y < right.y }
+                if left.width != right.width { return left.width < right.width }
+                if left.height != right.height { return left.height < right.height }
+                return lhs.id < rhs.id
+            case (.some, .none):
+                return true
+            case (.none, .some):
+                return false
+            case (.none, .none):
+                return lhs.id < rhs.id
+            }
+        }
     }
 
     /// Open a search hit in the timeline viewer.
@@ -453,9 +625,10 @@ extension AppModel {
                     window = try s.timelineNear(timestampMs: ts, limit: 80)
                 }
                 if window.isEmpty {
-                    return try s.recentTimeline(limit: 100).sorted { $0.id < $1.id }
+                    return try s.recentTimeline(limit: 100)
+                        .sorted(by: TimelineFrame.chronologicalAscending)
                 }
-                return window.sorted { $0.id < $1.id }
+                return window.sorted(by: TimelineFrame.chronologicalAscending)
             }
             timeline = built
             timelineLoadState = .ready
@@ -478,6 +651,7 @@ extension AppModel {
                 selectedTimelineID = nil
                 resolution = .unavailable
             }
+            rememberTimelineDisplayPreference(frameID: selectedTimelineID)
             publishTimelineNotice(resolution.noticeEvent)
         } catch {
             timelineLoadState = .failed

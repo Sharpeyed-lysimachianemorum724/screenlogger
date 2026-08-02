@@ -258,6 +258,61 @@ final class StoreQueryTests: XCTestCase {
         XCTAssertTrue(timeline[0].ocrPreview.contains("sidebar"))
     }
 
+    func testRecentTimelineLimitCountsMomentsAndKeepsEveryDisplay() throws {
+        let main = CaptureDisplayRect(x: 0, y: 0, width: 1_728, height: 1_117)
+        let second = CaptureDisplayRect(x: 1_728, y: 0, width: 1_920, height: 1_080)
+        _ = try store.insertSeedFrame(
+            timestampMs: 1_000,
+            foreground: "older",
+            captureDisplay: main
+        )
+        let mainID = try store.insertSeedFrame(
+            timestampMs: 2_000,
+            foreground: "main",
+            width: 3_456,
+            height: 2_234,
+            captureDisplay: main
+        )
+        let secondID = try store.insertSeedFrame(
+            timestampMs: 2_000,
+            foreground: "second",
+            width: 3_840,
+            height: 2_160,
+            captureDisplay: second
+        )
+
+        let timeline = try store.recentTimeline(limit: 1)
+
+        XCTAssertEqual(Set(timeline.map(\.id)), Set([mainID, secondID]))
+        XCTAssertEqual(timeline.map(\.timestampMs), [2_000, 2_000])
+        XCTAssertEqual(
+            timeline.compactMap(\.captureDisplay).sorted { $0.x < $1.x },
+            [main, second]
+        )
+    }
+
+    func testTimelineAroundUsesMomentBoundsAndKeepsCenterDisplays() throws {
+        var centerID: Int64 = 0
+        for timestamp in 1...12 {
+            let id = try store.insertSeedFrame(
+                timestampMs: Int64(timestamp * 1_000),
+                foreground: "moment \(timestamp)"
+            )
+            if timestamp == 6 {
+                centerID = id
+                _ = try store.insertSeedFrame(
+                    timestampMs: Int64(timestamp * 1_000),
+                    foreground: "moment \(timestamp) second display"
+                )
+            }
+        }
+
+        let timeline = try store.timelineAround(frameID: centerID, before: 2, after: 3)
+
+        XCTAssertEqual(Set(timeline.map(\.timestampMs)), Set([4_000, 5_000, 6_000, 7_000, 8_000, 9_000]))
+        XCTAssertEqual(timeline.filter { $0.timestampMs == 6_000 }.count, 2)
+    }
+
     func testTimelineSessionAndExpand() throws {
         // Session A: 0...2000, then gap, Session B: 1_000_000...
         let a1 = try store.insertSeedFrame(timestampMs: 0, foreground: "a1", background: "bg-a1")
@@ -363,6 +418,27 @@ final class StoreQueryTests: XCTestCase {
         let tops = try store.topDomains(limit: 5)
         XCTAssertEqual(tops.first?.identifier, "a.com")
         XCTAssertEqual(tops.first?.frameCount, 2)
+    }
+
+    func testUsageAndSessionsCountSynchronizedDisplaysAsOneMoment() throws {
+        _ = try store.insertSeedFrame(
+            timestampMs: 1_000,
+            foreground: "main",
+            bundleID: "dev.multidisplay",
+            displayName: "Multi Display"
+        )
+        _ = try store.insertSeedFrame(
+            timestampMs: 1_000,
+            foreground: "secondary",
+            bundleID: "dev.multidisplay",
+            displayName: "Multi Display"
+        )
+
+        XCTAssertEqual(try store.topApplications(limit: 1).first?.frameCount, 1)
+        XCTAssertEqual(try store.sessions().first?.frameCount, 1)
+        XCTAssertEqual(try store.stats().totalFrames, 2)
+        XCTAssertEqual(try store.stats().momentCount, 1)
+        XCTAssertEqual(try store.stats().unfinalizedMomentCount, 1)
     }
 
     func testSampleFramesMinSegmentLength() throws {

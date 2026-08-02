@@ -367,7 +367,8 @@ public final class Store: @unchecked Sendable {
         url: String? = nil,
         imagePath: String? = nil,
         width: Int = 100,
-        height: Int = 100
+        height: Int = 100,
+        captureDisplay: CaptureDisplayRect? = nil
     ) throws -> Int64 {
         try withSerializedMutation {
             let payload = CapturePayload(
@@ -385,7 +386,8 @@ public final class Store: @unchecked Sendable {
                 ocrBoxes: [
                     OCRBox(x: 0, y: 0, width: width, height: 20, textOffset: 0, textLength: foreground.count)
                 ],
-                imageFileExtension: "bin"
+                imageFileExtension: "bin",
+                captureDisplay: captureDisplay
             )
             let id = try store(payload: payload)
             if let imagePath {

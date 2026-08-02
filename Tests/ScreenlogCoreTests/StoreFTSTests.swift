@@ -158,11 +158,11 @@ final class StoreFTSTests: XCTestCase {
         XCTAssertEqual(ordinarySearch.count, 500)
     }
 
-    func testKeysetPagesAreStableAcrossTiedTimestampsAndNewCaptures() throws {
+    func testKeysetPagesAreStableAcrossNewCaptures() throws {
         let token = "cursor\(String(UUID().uuidString.prefix(8)).replacingOccurrences(of: "-", with: ""))"
         for index in 0..<205 {
             _ = try store.insertSeedFrame(
-                timestampMs: 2_200_000_000_000 + Int64(index / 5),
+                timestampMs: 2_200_000_000_000 + Int64(index),
                 foreground: "\(token) result \(index)"
             )
         }
@@ -215,6 +215,37 @@ final class StoreFTSTests: XCTestCase {
                     || (newer.timestampMs == older.timestampMs && newerID > olderID)
             }
         )
+    }
+
+    func testSearchReturnsOneExactDisplayPerMomentAndPaginatesByMoment() throws {
+        let token = "multisearch\(String(UUID().uuidString.prefix(8)).replacingOccurrences(of: "-", with: ""))"
+        _ = try store.insertSeedFrame(
+            timestampMs: 3_000,
+            foreground: "\(token) main display"
+        )
+        let selectedDisplayID = try store.insertSeedFrame(
+            timestampMs: 3_000,
+            foreground: "\(token) secondary display"
+        )
+        let olderID = try store.insertSeedFrame(
+            timestampMs: 2_000,
+            foreground: "\(token) older moment"
+        )
+
+        let first = try store.searchLibraryPage(
+            query: LibrarySearchQuery(text: token),
+            visibleLimit: 1
+        )
+        XCTAssertEqual(first.results.map(\.frameID), [selectedDisplayID])
+        XCTAssertTrue(first.isTruncated)
+
+        let second = try store.searchLibraryPage(
+            query: LibrarySearchQuery(text: token),
+            visibleLimit: 1,
+            after: try XCTUnwrap(first.nextCursor)
+        )
+        XCTAssertEqual(second.results.map(\.frameID), [olderID])
+        XCTAssertFalse(second.isTruncated)
     }
 
     func testCancelledQueuedReadDoesNotRunBeforeTheNewestRequest() async throws {
@@ -786,6 +817,24 @@ final class StoreFTSTests: XCTestCase {
         XCTAssertEqual(runs[2].map(\.id), [5])
         XCTAssertEqual(runs[3].map(\.id), [6])
         XCTAssertEqual(runs[4].map(\.id), [7, 8])
+    }
+
+    func testBuildResolutionRunsCompactsInterleavedDisplayStreams() {
+        typealias F = VideoCompactionService.UnfinalizedFrame
+        let frames: [F] = [
+            F(id: 1, path: "a1", width: 100, height: 100, timestampMs: 0, displayKey: "left"),
+            F(id: 2, path: "b1", width: 200, height: 100, timestampMs: 0, displayKey: "right"),
+            F(id: 3, path: "a2", width: 100, height: 100, timestampMs: 2_000, displayKey: "left"),
+            F(id: 4, path: "b2", width: 200, height: 100, timestampMs: 2_000, displayKey: "right"),
+            F(id: 5, path: "a3", width: 100, height: 100, timestampMs: 4_000, displayKey: "left"),
+            F(id: 6, path: "b3", width: 200, height: 100, timestampMs: 4_000, displayKey: "right"),
+        ]
+
+        let runs = VideoCompactionService.buildResolutionRuns(frames: frames, maxGapMs: 60_000)
+
+        XCTAssertEqual(runs.count, 2)
+        XCTAssertEqual(runs[0].map(\.id), [1, 3, 5])
+        XCTAssertEqual(runs[1].map(\.id), [2, 4, 6])
     }
 
     func testMakeDisplayKeyRoundsAndNilSafe() {
