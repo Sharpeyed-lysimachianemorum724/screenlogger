@@ -5,6 +5,21 @@ import SwiftUI
 extension HistoryPane {
     /// Full-bleed capture (edge to edge, no card chrome).
     var memoryStage: some View {
+        stageWithDisplayAccessibility
+            .accessibilityAction(named: Text(model.isReplaying ? "Pause replay" : "Play through moments")) {
+                TimelinePlaybackControl.toggle(model)
+            }
+            .accessibilityAction(named: Text("Center zoomed moment")) {
+                stagePanOffset = .zero
+                stagePanGestureStart = nil
+            }
+            .onChange(of: model.selectedTimelineID) { _, _ in
+                stagePanOffset = .zero
+                stagePanGestureStart = nil
+            }
+    }
+
+    private var stageCanvas: some View {
         GeometryReader { geometry in
             ZStack {
                 Color.black
@@ -60,109 +75,94 @@ extension HistoryPane {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contextMenu {
-            if model.canCopySelectedFrameImage {
-                Button {
-                    model.copySelectedFrameImage()
-                } label: {
-                    Label("Copy Image", systemImage: "photo.on.rectangle.angled")
+    }
+
+    private var stageWithContextActions: some View {
+        stageCanvas
+            .contextMenu {
+                if model.canCopySelectedFrameImage {
+                    Button {
+                        model.copySelectedFrameImage()
+                    } label: {
+                        Label("Copy Image", systemImage: "photo.on.rectangle.angled")
+                    }
+                    .accessibilityIdentifier("timeline.moment.context.copy-image")
                 }
-                .accessibilityIdentifier("timeline.moment.context.copy-image")
-            }
-            if model.canCopySelectedOCRText {
-                Button {
-                    model.copySelectedOCRText()
-                } label: {
-                    Label("Copy Text", systemImage: "doc.on.doc")
+                if model.canCopySelectedOCRText {
+                    Button {
+                        model.copySelectedOCRText()
+                    } label: {
+                        Label("Copy Text", systemImage: "doc.on.doc")
+                    }
+                    .accessibilityIdentifier("timeline.moment.context.copy-text")
                 }
-                .accessibilityIdentifier("timeline.moment.context.copy-text")
-            }
-            if model.showOpenExternally {
-                Button {
-                    model.openSelectedExternally()
-                } label: {
-                    Label("Open Source", systemImage: "arrow.up.forward.app")
+                if model.showOpenExternally {
+                    Button {
+                        model.openSelectedExternally()
+                    } label: {
+                        Label("Open Source", systemImage: "arrow.up.forward.app")
+                    }
+                    .disabled(!model.canOpenSelectedExternally)
+                    .accessibilityIdentifier("timeline.moment.context.open-source")
                 }
-                .disabled(!model.canOpenSelectedExternally)
-                .accessibilityIdentifier("timeline.moment.context.open-source")
-            }
-            if let frame = model.selectedTimelineFrame {
-                Divider()
-                Button(role: .destructive) {
-                    Task {
-                        await model.prepareLibraryDeletion(
-                            .moment(frameID: frame.id),
-                            origin: .timeline,
-                            title: "Delete This Moment?",
-                            detail: TimelineDisplayPresentation.deletionDetail(
-                                frame: frame,
-                                displayCount: model.selectedTimelineMomentFrames.count
+                if let frame = model.selectedTimelineFrame {
+                    Divider()
+                    Button(role: .destructive) {
+                        Task {
+                            await model.prepareLibraryDeletion(
+                                .moment(frameID: frame.id),
+                                origin: .timeline,
+                                title: "Delete This Moment?",
+                                detail: TimelineDisplayPresentation.deletionDetail(
+                                    frame: frame,
+                                    displayCount: model.selectedTimelineMomentFrames.count
+                                )
                             )
-                        )
+                        }
+                    } label: {
+                        Label("Delete Moment...", systemImage: "trash")
                     }
-                } label: {
-                    Label("Delete Moment...", systemImage: "trash")
+                    .accessibilityIdentifier("timeline.moment.context.delete")
                 }
-                .accessibilityIdentifier("timeline.moment.context.delete")
             }
-        }
-        .onTapGesture(count: 2) {
-            TimelinePlaybackControl.toggle(model)
-        }
-        // The stage is the explicit focus owner for bare Timeline shortcuts.
-        // Full Keyboard Access can move to controls below it without the
-        // window-wide key monitor stealing Space or arrow-key activation.
-        .focusable()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Captured moment")
-        .accessibilityValue(
-            model.selectedTimelineFrame.map {
-                let availability =
-                    $0.imagePath == nil && $0.videoID == nil
-                    ? ", preview unavailable"
-                    : ""
-                let displayContext =
-                    if model.selectedTimelineMomentFrames.count > 1,
-                        let index = model.selectedTimelineDisplayIndex
-                    {
-                        ", \(model.selectedTimelineDisplayLabel ?? "Display \(index + 1)"), \(index + 1) of \(model.selectedTimelineMomentFrames.count)"
-                    } else {
-                        ""
-                    }
-                return "\($0.appLabel), \(SLTimeFormat.full($0.timestampMs))\(displayContext)\(availability)"
-            } ?? "No moment selected"
-        )
-        .accessibilityHint(stageAccessibilityHint)
-        .accessibilityIdentifier("timeline.moment")
-        .accessibilityAction(named: Text("Previous moment")) {
-            guard model.canStepBack else { return }
-            model.stopReplay()
-            model.stepTimeline(by: -1)
-        }
-        .accessibilityAction(named: Text("Next moment")) {
-            guard model.canStepForward else { return }
-            model.stopReplay()
-            model.stepTimeline(by: 1)
-        }
-        .accessibilityAction(named: Text("Previous display")) {
-            model.stopReplay()
-            model.stepTimelineDisplay(by: -1)
-        }
-        .accessibilityAction(named: Text("Next display")) {
-            model.stopReplay()
-            model.stepTimelineDisplay(by: 1)
-        }
-        .accessibilityAction(named: Text(model.isReplaying ? "Pause replay" : "Play through moments")) {
-            TimelinePlaybackControl.toggle(model)
-        }
-        .accessibilityAction(named: Text("Center zoomed moment")) {
-            stagePanOffset = .zero
-            stagePanGestureStart = nil
-        }
-        .onChange(of: model.selectedTimelineID) { _, _ in
-            stagePanOffset = .zero
-            stagePanGestureStart = nil
-        }
+    }
+
+    private var stageWithMomentAccessibility: some View {
+        stageWithContextActions
+            .onTapGesture(count: 2) {
+                TimelinePlaybackControl.toggle(model)
+            }
+            // The stage is the explicit focus owner for bare Timeline shortcuts.
+            // Full Keyboard Access can move to controls below it without the
+            // window-wide key monitor stealing Space or arrow-key activation.
+            .focusable()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Captured moment")
+            .accessibilityValue(stageAccessibilityValue)
+            .accessibilityHint(stageAccessibilityHint)
+            .accessibilityIdentifier("timeline.moment")
+            .accessibilityAction(named: Text("Previous moment")) {
+                guard model.canStepBack else { return }
+                model.stopReplay()
+                model.stepTimeline(by: -1)
+            }
+            .accessibilityAction(named: Text("Next moment")) {
+                guard model.canStepForward else { return }
+                model.stopReplay()
+                model.stepTimeline(by: 1)
+            }
+    }
+
+    private var stageWithDisplayAccessibility: some View {
+        stageWithMomentAccessibility
+            .accessibilityAction(named: Text("Previous display")) {
+                model.stopReplay()
+                model.stepTimelineDisplay(by: -1)
+            }
+            .accessibilityAction(named: Text("Next display")) {
+                model.stopReplay()
+                model.stepTimelineDisplay(by: 1)
+            }
     }
 
     func previewIssueView(_ issue: TimelinePreviewIssue) -> some View {
@@ -341,6 +341,21 @@ extension HistoryPane {
             return "Drag to pan the zoomed moment. Use Left and Right Arrow to move between moments, or Command-0 to reset zoom"
         }
         return "Use Left and Right Arrow to move between moments, or Space to play and pause"
+    }
+
+    private var stageAccessibilityValue: String {
+        guard let frame = model.selectedTimelineFrame else { return "No moment selected" }
+        let availability = frame.imagePath == nil && frame.videoID == nil ? ", preview unavailable" : ""
+        let displayContext: String
+        if model.selectedTimelineMomentFrames.count > 1,
+            let index = model.selectedTimelineDisplayIndex
+        {
+            let displayLabel = model.selectedTimelineDisplayLabel ?? "Display \(index + 1)"
+            displayContext = ", \(displayLabel), \(index + 1) of \(model.selectedTimelineMomentFrames.count)"
+        } else {
+            displayContext = ""
+        }
+        return "\(frame.appLabel), \(SLTimeFormat.full(frame.timestampMs))\(displayContext)\(availability)"
     }
 
     private static func ocrSlice(_ utf16: [UInt16], offset: Int, length: Int) -> String {
